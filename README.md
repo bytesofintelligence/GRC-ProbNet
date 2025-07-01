@@ -89,3 +89,6 @@ The required atlas labelmaps will be automatically generated during the registra
 
 ## License
 This project is licensed under the [Apache License 2.0](LICENSE).
+
+## Acknowledgment
+This project has received funding from the European Union’s Horizon Europe research and innovation programme under grant agreement 101080302 (AI-POD).
