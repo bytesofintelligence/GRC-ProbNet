@@ -30,7 +30,7 @@ This project extends the original GRC-Net framework with:
   - Extension of the original cardiac structure pipeline to coronary segmentation
   - Dedicated uncertainty propagation experiments for coronary datasets
 
-- **Comprehensive experimental analysis**
+- **Experimental analysis**
   - Ablation studies across multiple uncertainty formulations
   - Multi-fold evaluation on ASOCA dataset
 
