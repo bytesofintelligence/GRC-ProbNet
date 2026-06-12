@@ -15,6 +15,8 @@ data/MM-WHS/images/*
 data/MM-WHS/labels/*
 !data/MM-WHS/labels/.gitkeep
 saved_models/*
+!saved_models/.gitkeep
+
 !saved_models/segmentation/.gitkeep
 !saved_models/segmentation/seed_42/.gitkeep
 !saved_models/segmentation/seed_123/.gitkeep
@@ -22,6 +24,8 @@ saved_models/*
 !saved_models/segmentation/seed_789/.gitkeep
 !saved_models/segmentation/seed_999/.gitkeep
 !saved_models/segmentation/seed_12345/.gitkeep
+
+
 !saved_models/segmentation_asoca/.gitkeep
 !saved_models/segmentation_asoca/fold_1/.gitkeep
 !saved_models/segmentation/fold_1/seed_42/.gitkeep
