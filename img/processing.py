@@ -232,13 +232,10 @@ def one_hot_labelmap(labelmap, smoothing_sigma=0.0, num_classes=33, dtype=cp.flo
 
     lab_cpu = sitk.GetArrayFromImage(labelmap)
     lab = cp.asarray(lab_cpu)
-    labels = cp.unique(lab)
 
-    if len(labels) != num_classes:
-        raise ValueError(f"Expected {num_classes} classes but found {len(labels)} in labelmap.")
-
-    # build one‐hot on GPU
-    one_hot = (lab[..., None] == labels).astype(dtype)
+    # build one‐hot on GPU indexed by class index, not by discovered unique values.
+    # this handles missing classes (e.g. all-background Anatomix predictions) without crashing.
+    one_hot = (lab[..., None] == cp.arange(num_classes, dtype=lab.dtype)).astype(dtype)
 
     if smoothing_sigma > 0:
         # don't blur across the channel axis

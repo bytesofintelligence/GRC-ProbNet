@@ -1237,7 +1237,8 @@ class FullSTN3D(nn.Module):
 
         self.device = device
         self.input_size = input_size
-        self.register_buffer('grid', self.get_normalized_grid(input_size[::-1]))
+        # Keep grid in (D, H, W) order to match conv output/disp tensors.
+        self.register_buffer('grid', self.get_normalized_grid(input_size))
 
         self.dtype = torch.cuda.float if (self.device == 'cuda') and False else torch.float
         num_features = torch.prod(torch.floor_divide(torch.tensor(input_size), 16))
@@ -1471,7 +1472,7 @@ class FullSTN3Dv2(nn.Module):
 
         self.device = device
         self.input_size = input_size
-        self.register_buffer('grid', self.get_normalized_grid(input_size[::-1]))
+        self.register_buffer('grid', self.get_normalized_grid(input_size))
 
         self.dtype = torch.cuda.float if (self.device == 'cuda') else torch.float
         num_features = torch.prod(torch.floor_divide(torch.tensor(input_size), 32))
