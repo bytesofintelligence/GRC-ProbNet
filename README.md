@@ -1,7 +1,136 @@
-# GRC-Net: Cardiovascular disease classification using radiomics and geometric features from cardiac CT Images
+# GRC-ProbNet: Uncertainty-aware feature extraction for Cardiovascular Disease Classification
 
-When using this code, please cite the following paper:
-> (A. Mittal, R. Mehta, O. Todd, P. Seeboeck, G. Langs, B. Glocker) Cardiovascular disease classification using radiomics and geometric features from cardiac CT Images
+This repository builds upon the original **GRC-Net** framework:
+
+> A. Mittal, R. Mehta, O. Todd, P. Seeboeck, G. Langs, B. Glocker  
+> *Cardiovascular disease classification using radiomics and geometric features from cardiac CT images*
+
+We gratefully acknowledge the original authors for their codebase, ideas, and foundational work, which this project extends.
+
+---
+
+## Project Overview
+
+This project is the implementation of a BEng thesis on uncertainty propagation within cardiac pipelines. The main goal is to investigate how **epistemic and ensemble-based uncertainty estimation** can improve robustness and interpretability in medical imaging pipelines.
+
+### Key Contributions of This Work
+
+This project extends the original GRC-Net framework with:
+
+- **Uncertainty-aware feature extraction pipelines**
+  - Multi-seed and ensemble-based uncertainty estimation
+  - Variance- and entropy-based feature construction
+
+- **Ensemble learning approaches**
+  - Prediction-space ensembles
+  - Feature-space aggregation strategies
+  - Weighted and inverse-variance fusion methods
+
+- **Coronary artery pipeline adaptation**
+  - Extension of the original cardiac structure pipeline to coronary segmentation
+  - Dedicated uncertainty propagation experiments for coronary datasets
+
+- **Comprehensive experimental analysis**
+  - Ablation studies across multiple uncertainty formulations
+  - Multi-fold evaluation on ASOCA dataset
+
+---
+
+## Code Structure
+
+Each experimental pipeline generally follows a consistent structure:
+
+> **Fine-tuning → Atlas-ISTN registration → Uncertainty computation (optional) → Classification**
+
+For example:
+
+`anatomix-fine-tuning.py → atlas-istn-anatomix.py → compute_uncertainty.py (+ aggregation scripts) → Geo-Radio-Classification.py`
+
+The classification step requires:
+- A trained Anatomix segmentation model (from step 1)
+- A trained registration model and constructed atlas (from step 2)  
+The required atlas labelmaps will be automatically generated during the registration stage.
+
+File names vary depending on the specific experimental setup, but the overall pipeline structure remains consistent across both cardiac and coronary experiments.
+
+---
+
+The repository is organised into the following main components:
+
+### `cardiac_structure_files/`
+Contains experiments for the **original cardiac structure classification pipeline**, extended with uncertainty-aware modelling.
+
+- Multi-seed classification experiments
+- Uncertainty propagation methods
+- Ensemble prediction pipelines
+- Atlas-ISTN based feature extraction experiments
+
+---
+
+### `coronary_files/`
+Contains the adapted pipeline for **coronary artery segmentation and classification**.
+
+- Coronary-specific segmentation and classification models
+- Uncertainty-aware coronary experiments
+- Ensemble and variance-based aggregation methods
+- Evaluation scripts for coronary disease classification
+
+
+---
+
+### `utils/`
+Contains helper functions for visualation of results, metrics computation and other pipeline utilities
+
+---
+
+### `img/`
+Core data processing module:
+
+- Dataset loading (`datasets.py`)
+- Image preprocessing (`processing.py`)
+- Transformations and augmentation pipelines (`transforms.py`)
+
+---
+
+### `nets/`
+Neural network architectures used in the pipeline:
+
+- Convolutional models
+- Spatial transformer networks (STN)
+- Gaussian convolution modules
+
+---
+
+## Data Setup
+
+This project assumes the following datasets are placed in the `data/` directory:
+
+- ASOCA dataset
+- MM-WHS dataset
+
+### ASOCA
+
+- Images → `data/ASOCA/images`
+- Labels → `data/ASOCA/labels`
+
+### MM-WHS
+
+- Images → `data/MM-WHS/images`
+- Labels → `data/MM-WHS/labels`
+
+---
+
+## Data Splits
+
+The ASOCA dataset uses a predefined 5-fold cross-validation setup provided in:
+
+- `data/config/asoca`
+
+Each fold contains:
+- 32 training subjects
+- 8 held-out test subjects
+
+This split structure is used across all coronary experiments to ensure reproducibility.
 
 ## Code
 
@@ -39,53 +168,43 @@ To run both the Anatomix fine-tuning and Geo-Radio Classification tutorial:
   pip install ipykernel ipywidgets pyradiomics optuna
 ```
 
-## Pipeline Overview
-This model assumes the existence of the ASOCA dataset and the MM-WHS dataset in the `data` subdirectory. 
-- The CT volumes and labelmaps for the MM-WHS dataset need to be extracted to the `data/MM-WHS/images` and `data/MM-WHS/labels` directory accordingly, with data splits pre-defined in the ``train``, ``val`` and ``test`` files in `data/config`. These images are used to fine-tune the Anatomix model and train the Atlas and registration network.  
-- The CT volumes for the ASOCA dataset need to be extracted to the `data/ASOCA/images` directory. The segmentations will be generated and hence do not need to be provided.
+### For future Imperial students/staff
 
-This repository provides training scripts for three key stages of the pipeline:
+To submit SLURM scripts and run this pipeline within the Imperial BioMedIA cluster:
 
-1. **Segmentation model training**
-2. **Atlas construction and registration network training**
-3. **Disease classification model training and evaluation**
+```shell
+ssh <username>@biomedia-slurm
+cd /vol/biomedic2/<wherever your grc-probnet is cloned to>
+sbatch <script>
+squeue -u <username>  # check status
+```
 
-### 1. Segmentation Model Training
+To activate an environment and run a Python file:
 
-To fine-tune the Anatomix segmentation model, use:
+```shell
+source /vol/biomedic2/<path to where your miniconda3 is>/miniconda3/bin/activate
+conda activate grcnet
+python <filename>
+```
 
-- `anatomix-fine-tuning.ipynb`
+To check the status of other machines using the SLURM cluster:
 
-### 2. Atlas Construction and Registration
+```shell
+/vol/biomedic3/bin/lazyslurm
+```
 
-There are three available options for training the atlas and registration network:
+To view your SLURM log files:
 
-- **Fully supervised** (requires manual segmentation labels):  
-  Use `atlas-istn-fully-supervised.py`
+```shell
+ls -lt slurm*
+```
 
-- **Semi-supervised (Anatomix-based)** (requires a fine-tuned Anatomix model):  
-  Use `atlas-istn-anatomix.py`  
-  _Note: Ensure the Anatomix model has been fine-tuned using `anatomix-fine-tuning.ipynb`_
+## Reproducibility Notes
 
-- **Semi-supervised (TotalSegmentator-based)** (uses TotalSegmentator as a pseudo-label generator):  
-  Use `atlas-istn-totalsegmentator.py`
-  _Note: requires a commercial license, (see https://github.com/wasserth/TotalSegmentator/)_
-
-_Note: The Semi-supervised scripts provided here evaluate against the pseudo-labels during training instead of against the manual annotations as done in the paper. More generally, the semi-supervised scripts do not load any manual annotations. This is done for easier flexibility to add more unlabelled data for any further data you wish to train the model with in the future._
-
-No validation or test images are _needed_ to train the registration network and atlas.
-
-### 3. Disease Classification
-
-To train and evaluate the disease classification model, use:
-
-- `Geo-Radio-Classification.ipynb`
-
-This step requires:
-- A trained Anatomix segmentation model (from step 1)
-- A trained registration model and constructed atlas (from step 2)  
-The required atlas labelmaps will be automatically generated during the registration stage.
-
+- Experiments may take overnight or longer depending on GPU availability
+- Recommended hardware: 24GB+ GPU memory
+- Small variations may occur due to randomness in training and ensemble sampling
+- Ensure consistent dataset splits for reproducibility
 
 ## License
 This project is licensed under the [Apache License 2.0](LICENSE).
