@@ -55,7 +55,7 @@ _parser.add_argument(
 _parser.add_argument(
     "--run-resnet", action="store_true", default=False,
     help="Run the ResNet-50 3D image-only baseline after the MLP experiment. "
-         "Disabled by default — requires a GPU with sufficient VRAM (use gpus24 partition)."
+         "Disabled by default"
 )
 _args = _parser.parse_args()
 
@@ -273,7 +273,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 MAX_DEF_PC = 3
 
-# ── Load uncertainty_bundle_features CSVs (split-aware) ──────────────────────────────────────────
+# Load uncertainty_bundle_features CSVs (split-aware)
 # Produced by coronary-compute-unc-bundle.py — unique filename, never overwrites other CSVs.
 # Test split  (8 subjects, sample_ids 0-7):
 _bundle_test_csv  = f"{_base_out}/full-stn/uncertainty_analysis/metrics/uncertainty_bundle_features.csv"
@@ -289,7 +289,7 @@ print(f"  Train CSV : {_bundle_train_csv}  shape={_bundle_train_df.shape}")
 
 _UNC_BUNDLE_COLS = ["def_variance", "volume_variance", "pairwise_dice_disagreement"]
 
-# Build sample_id → {col: value} dicts for fast lookup
+# Build sample_id -> {col: value} dicts for fast lookup
 _bundle_test_dict  = {
     int(row["sample_id"]): {c: row[c] for c in _UNC_BUNDLE_COLS}
     for _, row in _bundle_test_df.iterrows()
@@ -588,7 +588,7 @@ for seed_idx, s in enumerate(best_fold_info['seeds']):
         print(f"  Confusion Matrix:\n{m['confusion_matrix']}\n")
 
 
-# ── Save per-fold results ─────────────────────────────────────────────────────────────────────────
+# Save per-fold results to a labelled CSV - useful for later analysis 
 # All outputs use "unc_bundle" tag — never overwrites other experiment outputs.
 _exp_tag = "unc_bundle"
 _out_dir = os.path.join(_base_out, f"classification_{_exp_tag}")
@@ -603,7 +603,7 @@ _feats_df.insert(0, "patient_id",
 _feats_df  = _feats_df.drop(columns=["fname"])
 _feats_path = os.path.join(_out_dir, f"features_{_exp_tag}.csv")
 _feats_df.to_csv(_feats_path, index=False)
-print(f"\nFeatures saved  → {_feats_path}  (shape: {_feats_df.shape})")
+print(f"\nFeatures saved  -> {_feats_path}  (shape: {_feats_df.shape})")
 
 # Retrain best MLP on train split; ensemble predictions on test split
 _hp       = best_hyperparams
@@ -666,12 +666,12 @@ for _i, _fi in enumerate(_te_idx):
     })
 _pred_path = os.path.join(_out_dir, f"predictions_{_exp_tag}.csv")
 pd.DataFrame(_pred_rows).to_csv(_pred_path, index=False)
-print(f"Predictions saved → {_pred_path}")
+print(f"Predictions saved -> {_pred_path}")
 
 # mlp_unc_bundle.pt
 _mlp_path = os.path.join(_out_dir, f"mlp_{_exp_tag}.pt")
 torch.save(_first_mlp.state_dict(), _mlp_path)
-print(f"MLP model saved  → {_mlp_path}  (seed={seeds[0]})")
+print(f"MLP model saved  -> {_mlp_path}  (seed={seeds[0]})")
 
 # metrics_unc_bundle.json
 _metrics_out = {
@@ -706,7 +706,7 @@ _metrics_out = {
 _json_path = os.path.join(_out_dir, f"metrics_{_exp_tag}.json")
 with open(_json_path, "w") as _jf:
     json.dump(_metrics_out, _jf, indent=2)
-print(f"Metrics saved    → {_json_path}")
+print(f"Metrics saved    -> {_json_path}")
 
 # results_unc_bundle.csv
 _result_rows = []
@@ -726,7 +726,7 @@ for _si, _s in enumerate(best_fold_info['seeds']):
         })
 _results_csv = os.path.join(_out_dir, f"results_{_exp_tag}.csv")
 pd.DataFrame(_result_rows).to_csv(_results_csv, index=False)
-print(f"Results saved    → {_results_csv}")
+print(f"Results saved    -> {_results_csv}")
 
 
 # ── Feature importance analysis for uncertainty bundle features ────────────────────────────────────
@@ -822,7 +822,7 @@ def analyse_bundle_importance():
         print(f"    #{rank:>2}: {sel[fi]:<58}  {mag:.6f}{tag}")
 
     print(f"\n--- (b) Permutation importance for uncertainty bundle features ---")
-    print(f"  Positive drop = accuracy falls when feature permuted → feature is informative")
+    print(f"  Positive drop = accuracy falls when feature permuted -> feature is informative")
     for col in bundle_cols:
         drops = p_drops[col]
         print(f"  {col:<40}  mean drop: {np.mean(drops):+.4f}  std: {np.std(drops):.4f}")

@@ -31,8 +31,6 @@
 
 # # Imports and Global Config
 
-# In[ ]:
-
 
 import sys
 import os
@@ -50,8 +48,6 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark     = False
 
 
-# In[ ]:
-
 
 _parser = argparse.ArgumentParser(description="Coronary Geo-Radio Classification")
 # Coronary: --fold selects the cross-validation fold and derives all paths automatically.
@@ -62,22 +58,21 @@ _parser.add_argument(
 _parser.add_argument(
     "--use-uncertainty", action="store_true", default=False,
     help="Append per-structure uncertainty entropy features to the classifier input. "
-         "Not yet supported for the coronary pipeline — flag is preserved for future use."
 )
 _parser.add_argument(
     "--uncertainty-csv",
-    # Coronary uncertainty CSV path (not yet generated — commented out in loading section).
+    # Coronary uncertainty CSV path
     default="output/asoca-coronary/uncertainty_analysis/metrics/per_structure_uncertainty.csv",
     help="Path to per_structure_uncertainty.csv produced by compute_uncertainty.py."
 )
 _parser.add_argument(
     "--run-resnet", action="store_true", default=False,
     help="Run the ResNet-50 3D image-only baseline after the MLP experiment. "
-         "Disabled by default — requires a GPU with sufficient VRAM (use gpus24 partition)."
+         "Disabled by default"
 )
 _args = _parser.parse_args()
 
-# Accept bare digit: --fold 1 → fold_1
+# Accept bare digit: --fold 1 -> fold_1
 if _args.fold.isdigit():
     _args.fold = f"fold_{_args.fold}"
 
@@ -99,11 +94,7 @@ crop_size = (96, 96, 96)
 # MM-WHS uses num_classes=8 with 7 cardiac structures.
 num_classes = 2
 
-# Experiment switch — controlled by --use-uncertainty CLI flag.
-# False → baseline (radiomic + geometric only).  Only controls selected_cols in objective().
-# NOTE: uncertainty features are not yet computed for the coronary pipeline.
-#       The flag and UNCERTAINTY_CSV are preserved so the code path can be re-enabled
-#       once coronary uncertainty outputs are available.
+
 USE_UNCERTAINTY_FEATURES = _args.use_uncertainty
 UNCERTAINTY_CSV = _args.uncertainty_csv
 RUN_RESNET = _args.run_resnet
@@ -113,15 +104,11 @@ RUN_RESNET = _args.run_resnet
 # *(should match "class_mapping" in `data/config/asoca/config.json`)*
 # Coronary: single foreground class.  MM-WHS had 7 structures (1–7).
 
-# In[ ]:
-
 
 class_mapping = {
         1: "coronary_artery",
     }
 
-
-# In[ ]:
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu" 
@@ -129,8 +116,6 @@ print(device)
 
 
 # # Load STN
-
-# In[ ]:
 
 
 # Coronary: fold-specific STN from Stage-2 outputs.  The STN is loaded frozen
@@ -157,11 +142,9 @@ stn.eval()
 
 # # Load dataset
 
-# In[ ]:
 
-
-# Helper: auto-discover the lowest-loss finetuned Anatomix checkpoint for a fold.
-# Mirrors _find_best_asoca_fold_checkpoint in coronary-atlas-istn.py.
+# function to auto-discover the lowest-loss finetuned Anatomix checkpoint for a fold.
+# same as _find_best_asoca_fold_checkpoint in coronary-atlas-istn.py
 def _find_best_asoca_fold_checkpoint(fold_id, base_dir="saved_models/segmentation_asoca"):
     fold_dir = os.path.join(base_dir, fold_id)
     prefix   = f"finetuned_asoca_{fold_id}_"
@@ -207,7 +190,7 @@ anatomix_ckpt = _find_best_asoca_fold_checkpoint(fold)
 # are extracted for every patient using the frozen fold-k STN.
 # The MLP classifier later trains only on train patients and tests on test patients.
 # skip_lcc=True: coronary arteries have multiple legitimate connected components
-#   (LCA, RCA, branches) — do NOT discard all but the largest.
+
 _train_csv = f"{_base_cfg}/{fold}/train.csv"
 _test_csv  = f"{_base_cfg}/{fold}/test.csv"
 
@@ -245,8 +228,6 @@ dataloader_test = ThreadDataLoader(dataset_test, batch_size=1, shuffle=False)
 #   Final feature vector: 3 geometric + 107 radiomics = 110 features (SAME dims as baseline).
 #   No extra uncertainty columns; no SelectKBest; no dimensionality explosion.
 
-# In[ ]:
-
 
 import torch
 import numpy as np
@@ -264,7 +245,7 @@ radiomics_settings = {
 }
 extractor = featureextractor.RadiomicsFeatureExtractor(**radiomics_settings)
 
-# Coronary: fold-specific atlas from Stage-2 outputs.
+# Coronary: fold-specific atlas from previous stage outputs
 atlas_label_itk = sitk.ReadImage(f"{_base_out}/full-stn/train/model/atlas_labelmap_final.nii.gz")
 
 arr_lab = sitk.GetArrayFromImage(atlas_label_itk)
@@ -294,7 +275,7 @@ identity_grid = identity_grid.repeat(batch_size, 1, 1, 1, 1).to(device)
 SEMANTIC_FEATURES = []
 
 # _feature_bank: accumulates per-seed features for each (split, sample_idx).
-# Key: (split, sample_idx) → dict with per-seed geo SVD values and radiomics vectors.
+# Key: (split, sample_idx) -> dict with per-seed geo SVD values and radiomics vectors.
 # Averaging happens AFTER all seeds are processed, per subject, before classification.
 _feature_bank = {}
 
@@ -332,7 +313,7 @@ for _seed in SEEDS:
             fname        = batch["fname"][0]
             img_type     = "Diseased" if "Diseased" in fname else "Normal"
 
-            # ── Geometric: SVD singular values of displacement at foreground voxels ──
+            # Geometric: SVD singular values of displacement at foreground voxels
             src = label_onehot[:, 1:, ...]
             tgt = atlas_label[:, 1:, ...]
             _   = stn(torch.cat((src, tgt), dim=1))
@@ -354,7 +335,7 @@ for _seed in SEEDS:
                     evr[:n_comp] = s[:n_comp]
                 struct_evr_seed[L] = evr
 
-            # ── Radiomics ────────────────────────────────────────────────────────────
+            # Radiomics
             img_np   = image_tensor[0, 0].detach().cpu().numpy()
             sitk_img = sitk.GetImageFromArray(img_np)
             sitk_img.SetSpacing(spacing)
@@ -375,7 +356,7 @@ for _seed in SEEDS:
                     feats = [float(result.get(fn, float("nan"))) for fn in SEMANTIC_FEATURES]
                     radiomics_seed[L] = np.array(feats, dtype=float)
 
-            # ── Accumulate in feature bank ───────────────────────────────────────────
+            # Accumulate in feature bank
             key = (_split, sample_idx)
             if key not in _feature_bank:
                 _feature_bank[key] = {
@@ -394,7 +375,7 @@ for _seed in SEEDS:
     del _ds_tr_base_s, _ds_tr_s, _dl_tr_s
     del _ds_te_base_s, _ds_te_s, _dl_te_s
 
-# ── Uncertainty-weighted aggregation across seeds → build subjects list ──────────────────
+# Uncertainty-weighted aggregation across seeds -> build subjects list
 # For each subject, derive per-seed confidence weights from geometry disagreement,
 # then fuse features as a weighted sum.  Final dimensionality equals baseline (~110).
 print(f"\nUsing uncertainty-weighted ensemble features ({len(SEEDS)} seeds: {SEEDS})")
@@ -406,10 +387,10 @@ _EPS = 1e-12
 for key in sorted(_feature_bank.keys()):
     entry = _feature_bank[key]
 
-    # Step 1 — geometry stack per structure: (N_seeds, MAX_DEF_PC)
+    # Geometry stack per structure: (N_seeds, MAX_DEF_PC)
     geo_stacks = {L: np.stack(entry["geo"][L], axis=0) for L in class_mapping.keys()}
 
-    # Step 2 — per-seed squared Euclidean distance from geometry consensus (all structures)
+    # Per-seed squared Euclidean distance from geometry consensus (all structures)
     G_means = {L: geo_stacks[L].mean(axis=0) for L in class_mapping.keys()}
     u = np.zeros(len(SEEDS), dtype=float)
     for seed_i in range(len(SEEDS)):
@@ -417,7 +398,7 @@ for key in sorted(_feature_bank.keys()):
             diff = geo_stacks[L][seed_i] - G_means[L]
             u[seed_i] += float(np.dot(diff, diff))
 
-    # Step 3 — confidence weights: exp(-u_i), normalised to sum to 1
+    # Confidence weights: exp(-u_i), normalised to sum to 1
     raw_w = np.exp(-u)
     weights = raw_w / (raw_w.sum() + _EPS)  # (N_seeds,)
 
@@ -428,12 +409,12 @@ for key in sorted(_feature_bank.keys()):
         print(f"  weights = {weights.round(4)}  (sum={weights.sum():.6f})")
         _debug_printed = True
 
-    # Step 4 — weighted fusion of geometric singular values
+    # Weighted fusion of geometric singular values
     struct_evr_weighted = {}
     for L in class_mapping.keys():
         struct_evr_weighted[L] = weights @ geo_stacks[L]  # (MAX_DEF_PC,)
 
-    # Step 5 — weighted fusion of radiomics; NaN-safe per feature column
+    # Weighted fusion of radiomics; NaN-safe per feature column
     radiomics_weighted = {}
     for L in class_mapping.keys():
         seed_rads = entry["rad"][L]
@@ -476,8 +457,6 @@ for _subj in subjects:
 # Here, we perform hyperparameter optimisation using `optuna` to find the best classification model for the diseased data.
 # We perform 5-fold stratified cross-validation over 3 seeds to achieve confidence in the low volume of data. 
 
-# In[ ]:
-
 
 import torch
 import numpy as np
@@ -489,7 +468,7 @@ from sklearn.model_selection import StratifiedKFold
 from torchvision.ops import MLP
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 
-# ── Build feature rows from uncertainty-weighted subjects ────────────────────────────────
+# Build feature rows from uncertainty-weighted subjects
 # struct_evr[L] already contains the uncertainty-weighted SVD singular values (MAX_DEF_PC,).
 # No SVD is recomputed here — the weighted fusion happened during feature extraction above.
 
@@ -523,7 +502,7 @@ print(df_full.isna().any()[lambda x: x])
 print(df_full.head(4))
 print("Shape of df_full:", df_full.shape)
 
-# ── Sanity check: confirm weighted fusion happened and features are non-constant ──────────────
+# Sanity check: confirm weighted fusion happened and features are non-constant
 print("\nUsing uncertainty-weighted ensemble features")
 print("Feature dataframe shape:", df_full.shape)
 
@@ -536,7 +515,7 @@ print(f"First 5 feature variances: {_feat_vars.values[:5].round(6)}")
 _near_const = (_feat_vars < 1e-10).sum()
 print(f"Near-constant features (var < 1e-10): {_near_const} / {len(_feat_check)}")
 
-# ── Feature dimensionality summary ──────────────────────────────────────────────────────────────
+# Useful to have a feature dimensionality summary
 _n_structs   = len(class_mapping)                  # 1 (coronary_artery only)
 _n_rad_feats = len(SEMANTIC_FEATURES) * _n_structs # e.g. 107 × 1 = 107
 _n_geo_feats = MAX_DEF_PC * _n_structs             # 3 × 1 = 3
@@ -560,11 +539,7 @@ seeds = [10, 101, 202]
 _train_mask = (df_full["split"] == "train").to_numpy()
 _val_mask   = (df_full["split"] == "test").to_numpy()
 
-# get_folds (MM-WHS StratifiedKFold helper) is not used for coronary;
-# the predefined fold split replaces it.  Kept as a comment for reference.
-# def get_folds(seed):
-#     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
-#     return list(skf.split(np.zeros((N, 1)), y_global))
+
 
 def objective(trial):
     hidden_units = trial.suggest_int("hidden_units", 8, 512, step=8)
@@ -582,10 +557,6 @@ def objective(trial):
         for i, feat_name in enumerate(SEMANTIC_FEATURES):
             selected_cols.append(f"{feat_name}_{name}")
 
-    # Step 5 — append uncertainty columns when the experiment flag is on
-    # ensemble_weighted: no uncertainty scalar features — geo+radiomics only (uncertainty-weighted).
-    # USE_UNCERTAINTY_FEATURES is always False for this experiment.
-
     # On trial 0, print feature selection summary
     if trial.number == 0:
         print(f"\n[Trial 0] experiment=ensemble_weighted  (geo+radiomics, uncertainty-weighted fusion, no unc scalars)")
@@ -597,7 +568,7 @@ def objective(trial):
     if trial.number == 0:
         print(f"[Trial 0] X_np.shape          : {X_np.shape}")
     y_np = y_global.copy()                           # numpy array (N_samples,), strings "Normal"/"Diseased"
-    # N_samples = len(y_np)  # unused after StratifiedKFold removal
+
 
     X_all = torch.from_numpy(X_np).float()
     y_all = torch.from_numpy((y_np == "Diseased").astype(np.float32)).to(device)
@@ -720,7 +691,7 @@ best_fold_info   = {
     'per_seed_fold_metrics': best_trial.user_attrs["per_seed_fold_metrics"]
 }
 
-# 7) Aggregate all metrics over seeds & folds
+# Aggregate all metrics over seeds & folds
 all_accuracies    = []
 all_precisions    = []
 all_recalls       = []
@@ -776,12 +747,12 @@ for seed_idx, s in enumerate(best_fold_info['seeds']):
         print(f"  Confusion Matrix:\n{m['confusion_matrix']}\n")
 
 
-# ── Step 8: Save per-fold results ────────────────────────────────────────────────────────────────
+# Save per-fold results to a labelled CSV - useful for later analysis 
 _exp_tag = "ensemble_weighted"
 _out_dir = os.path.join(_base_out, f"classification_{_exp_tag}")
 os.makedirs(_out_dir, exist_ok=True)
 
-# ── features.csv: raw feature vectors for all patients ───────────────────────────────────────────
+# features.csv: raw feature vectors for all patients 
 _meta_cols = ["fname", "label", "split"]
 _feat_cols = [c for c in df_full.columns if c not in _meta_cols]
 _feats_df  = df_full[_meta_cols + _feat_cols].copy()
@@ -790,9 +761,9 @@ _feats_df.insert(0, "patient_id",
 _feats_df  = _feats_df.drop(columns=["fname"])
 _feats_path = os.path.join(_out_dir, "features.csv")
 _feats_df.to_csv(_feats_path, index=False)
-print(f"\nFeatures saved  → {_feats_path}  (shape: {_feats_df.shape})")
+print(f"\nFeatures saved  -> {_feats_path}  (shape: {_feats_df.shape})")
 
-# ── Retrain best MLP (all seeds) on train split; ensemble predictions on test split ──────────────
+# Retrain best MLP (all seeds) on train split; ensemble predictions on test split 
 _hp       = best_hyperparams
 _lyrs_out = [_hp["hidden_units"]] * _hp["num_layers"] + [1]
 
@@ -852,12 +823,12 @@ for _i, _fi in enumerate(_te_idx):
     })
 _pred_path = os.path.join(_out_dir, "predictions.csv")
 pd.DataFrame(_pred_rows).to_csv(_pred_path, index=False)
-print(f"Predictions saved → {_pred_path}")
+print(f"Predictions saved -> {_pred_path}")
 
 # mlp.pt: MLP weights from the first seed (deterministic reference model)
 _mlp_path = os.path.join(_out_dir, "mlp.pt")
 torch.save(_first_mlp.state_dict(), _mlp_path)
-print(f"MLP model saved  → {_mlp_path}  (seed={seeds[0]})")
+print(f"MLP model saved  -> {_mlp_path}  (seed={seeds[0]})")
 
 # metrics.json: aggregate Optuna metrics + ensemble test metrics for this fold
 _metrics_out = {
@@ -886,9 +857,9 @@ _metrics_out = {
 _json_path = os.path.join(_out_dir, "metrics.json")
 with open(_json_path, "w") as _jf:
     json.dump(_metrics_out, _jf, indent=2)
-print(f"Metrics saved    → {_json_path}")
+print(f"Metrics saved    -> {_json_path}")
 
-# results CSV: one row per (seed × fold), consistent with MM-WHS format
+# results csv 
 _result_rows = []
 for _si, _s in enumerate(best_fold_info['seeds']):
     for _fi, _m in enumerate(best_fold_info['per_seed_fold_metrics'][_si], start=1):
@@ -906,138 +877,14 @@ for _si, _s in enumerate(best_fold_info['seeds']):
         })
 _results_csv = os.path.join(_out_dir, f"results_{_exp_tag}.csv")
 pd.DataFrame(_result_rows).to_csv(_results_csv, index=False)
-print(f"Results saved    → {_results_csv}")
+print(f"Results saved    -> {_results_csv}")
 
 
-# ── Step 9: Feature importance analysis (uncertainty experiment only) ─────────────────────────────
-# Retrains with best hyperparameters on one seed (5 folds) to measure:
-#   (a) First-layer weight magnitudes — proxy for how much each input feature is used.
-#   (b) Permutation importance for unc_* features — direct accuracy-drop measure.
-# Only runs when USE_UNCERTAINTY_FEATURES=True; informative for assessing whether the
-# network actually relies on the 7 new features.
-
-if USE_UNCERTAINTY_FEATURES:
-    def analyse_uncertainty_importance():
-        hp          = best_trial.user_attrs["hyperparams"]
-        unc_cols    = [f"unc_{name}" for _, name in class_mapping.items()]
-
-        # Reconstruct selected_cols exactly as the best trial used them
-        sel = []
-        for L, name in class_mapping.items():
-            for i in range(hp["def_pc_amt"]):
-                sel.append(f"def_pc{i+1}_{name}")
-            for feat_name in SEMANTIC_FEATURES:
-                sel.append(f"{feat_name}_{name}")
-        for _, name in class_mapping.items():
-            sel.append(f"unc_{name}")
-
-        X     = df_full[sel].to_numpy(dtype=np.float32)
-        y     = y_global.copy()
-        n_in  = X.shape[1]
-        unc_indices = [sel.index(c) for c in unc_cols]
-        layers_fi   = [hp["hidden_units"]] * hp["num_layers"] + [1]
-
-        w_imp   = np.zeros(n_in)
-        p_drops = {c: [] for c in unc_cols}
-        n_folds = 0
-
-        s_fi = seeds[0]
-        random.seed(s_fi); np.random.seed(s_fi); torch.manual_seed(s_fi)
-        skf_fi = StratifiedKFold(n_splits=5, shuffle=True, random_state=s_fi)
-
-        print(f"\n=== Feature Importance Analysis (seed={s_fi}, best HP={hp}) ===")
-        print(f"  X shape           : {X.shape}")
-        print(f"  Uncertainty cols  : {unc_cols}")
-        print(f"  Uncertainty indices in X: {unc_indices}")
-
-        for train_i, val_i in skf_fi.split(np.zeros((len(y), 1)), y):
-            Xtr, Xvl = X[train_i], X[val_i]
-            ytr = (y[train_i] == "Diseased").astype(np.float32)
-            yvl = (y[val_i]   == "Diseased").astype(np.float32)
-
-            sc   = StandardScaler()
-            Xtr_s = sc.fit_transform(Xtr)
-            Xvl_s = sc.transform(Xvl)
-
-            Xtr_t = torch.from_numpy(Xtr_s).float().to(device)
-            ytr_t = torch.from_numpy(ytr).to(device)
-
-            mdl  = MLP(n_in, layers_fi, dropout=hp["dropout"]).to(device)
-            opt  = torch.optim.AdamW(mdl.parameters(), lr=hp["lr"])
-            crit = torch.nn.BCEWithLogitsLoss()
-
-            for _ in range(hp["num_epochs"]):
-                mdl.train()
-                loss = crit(mdl(Xtr_t).squeeze(1), ytr_t)
-                opt.zero_grad(); loss.backward(); opt.step()
-
-            mdl.eval()
-
-            # (a) First-layer weight magnitude per input feature
-            first_lin = next(m for m in mdl.modules() if isinstance(m, torch.nn.Linear))
-            w_imp += first_lin.weight.detach().abs().mean(dim=0).cpu().numpy()
-
-            # Baseline accuracy on the validation fold
-            with torch.no_grad():
-                Xvl_t  = torch.from_numpy(Xvl_s).float().to(device)
-                b_pred = (torch.sigmoid(mdl(Xvl_t).squeeze(1)).cpu().numpy() >= 0.5).astype(int)
-            base_acc = accuracy_score(yvl.astype(int), b_pred)
-
-            # (b) Permutation importance — only for the 7 uncertainty features
-            rng = np.random.RandomState(42)
-            for col in unc_cols:
-                fi        = sel.index(col)
-                Xvl_perm  = Xvl_s.copy()
-                Xvl_perm[:, fi] = rng.permutation(Xvl_perm[:, fi])
-                with torch.no_grad():
-                    p_pred = (torch.sigmoid(
-                        mdl(torch.from_numpy(Xvl_perm).float().to(device)).squeeze(1)
-                    ).cpu().numpy() >= 0.5).astype(int)
-                p_drops[col].append(base_acc - accuracy_score(yvl.astype(int), p_pred))
-
-            n_folds += 1
-
-        w_imp /= n_folds
-
-        # ── Report ──────────────────────────────────────────────────────────────────────────────
-        print(f"\n--- (a) First-layer weight magnitude (avg over {n_folds} folds) ---")
-        print(f"  {'Feature':<50}  {'Weight Mag':>10}")
-        print(f"  {'-'*62}")
-        unc_mags = []
-        for col in unc_cols:
-            fi  = sel.index(col)
-            mag = float(w_imp[fi])
-            unc_mags.append(mag)
-            print(f"  {col:<50}  {mag:>10.6f}")
-
-        print(f"\n  Uncertainty features — mean: {np.mean(unc_mags):.6f}  "
-              f"max: {np.max(unc_mags):.6f}  min: {np.min(unc_mags):.6f}")
-        print(f"  All features         — mean: {float(w_imp.mean()):.6f}  "
-              f"max: {float(w_imp.max()):.6f}")
-
-        ranked = sorted(enumerate(w_imp), key=lambda x: x[1], reverse=True)
-        print(f"\n  Top-10 features by first-layer weight magnitude:")
-        for rank, (fi, mag) in enumerate(ranked[:10], 1):
-            tag = "  ← UNCERTAINTY" if sel[fi].startswith("unc_") else ""
-            print(f"    #{rank:>2}: {sel[fi]:<58}  {mag:.6f}{tag}")
-
-        print(f"\n--- (b) Permutation importance for uncertainty features ---")
-        print(f"  Positive drop = accuracy falls when feature permuted → feature is informative")
-        print(f"  {'Feature':<50}  {'Mean drop':>10}  {'Std':>8}")
-        print(f"  {'-'*72}")
-        for col in unc_cols:
-            drops = p_drops[col]
-            print(f"  {col:<50}  {np.mean(drops):>+10.4f}  {np.std(drops):>8.4f}")
-
-    analyse_uncertainty_importance()
 
 
-# # ResNet Baseline
+
 # We provide a Resnet-50 model as an Image-only baseline to compare our model against.
-# Disabled by default (--run-resnet flag required). Run once separately on gpus24 partition;
-# results don't change between baseline/uncertainty experiments so re-running is wasteful.
-
-# In[ ]:
+# Disabled by default (--run-resnet flag required). 
 
 if RUN_RESNET:
     import torch

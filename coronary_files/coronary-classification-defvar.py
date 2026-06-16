@@ -53,7 +53,7 @@ _parser.add_argument(
 _parser.add_argument(
     "--run-resnet", action="store_true", default=False,
     help="Run the ResNet-50 3D image-only baseline after the MLP experiment. "
-         "Disabled by default — requires a GPU with sufficient VRAM (use gpus24 partition)."
+         "Disabled by default"
 )
 _args = _parser.parse_args()
 
@@ -153,6 +153,11 @@ dataloader_test = ThreadDataLoader(dataset_test, batch_size=1, shuffle=False)
 
 
 # # Extract radiomic and deformation data
+# This loop will iterate over each CT test volume in `inference.csv`, creating features per volume in a list.
+# For each test volume, we store the following features for downstream classification:
+# - **label**, described as either "Diseased" or "Healthy" (obtained by parsing the file name).
+# - **struct_disp**, a dictionary keyed per substructure storing the respective deformation displacement field.
+# - **radiomics**, a dictionary keyed per substructure storing the respective radiomics features.
 
 import torch
 import numpy as np
@@ -271,8 +276,8 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 MAX_DEF_PC = 3
 
-# ── Load deformation_variance_summary CSVs (split-aware) ─────────────────────────────────────────
-# NEW unique filenames — never overwriting per_structure_uncertainty.csv.
+# Load deformation_variance_summary CSVs (split-aware) 
+# btw never overwrite per_structure_uncertainty.csv
 # Test split  (8 subjects, sample_ids 0-7):
 _defvar_test_csv  = f"{_base_out}/full-stn/uncertainty_analysis/metrics/deformation_variance_summary.csv"
 # Train split (32 subjects, sample_ids 0-31):
@@ -285,7 +290,7 @@ print("\n=== Deformation Variance CSVs — verification ===")
 print(f"  Test  CSV : {_defvar_test_csv}  shape={_defvar_test_df.shape}")
 print(f"  Train CSV : {_defvar_train_csv}  shape={_defvar_train_df.shape}")
 
-# Build sample_id → deformation_variance_mean dicts for fast lookup
+# Build sample_id -> deformation_variance_mean dicts for fast lookup
 _defvar_test_dict  = dict(zip(_defvar_test_df["sample_id"],
                                _defvar_test_df["deformation_variance_mean"]))
 _defvar_train_dict = dict(zip(_defvar_train_df["sample_id"],
@@ -327,7 +332,7 @@ for subj in subjects:
             col = f"{feat_name}_{name}"
             row[col] = float(rad_vec[idx])
 
-    # Deformation variance feature — split-conditional lookup.
+    # Deformation variance feature - split-conditional lookup.
     # train subjects use _defvar_train_dict; test subjects use _defvar_test_dict.
     sid    = subj["sample_idx"]
     _ddict = _defvar_test_dict if subj["split"] == "test" else _defvar_train_dict
@@ -579,7 +584,7 @@ for seed_idx, s in enumerate(best_fold_info['seeds']):
         print(f"  Confusion Matrix:\n{m['confusion_matrix']}\n")
 
 
-# ── Save per-fold results ─────────────────────────────────────────────────────────────────────────
+# Save per-fold results to a labelled CSV - useful for later analysis 
 # All outputs use "defvar" tag — never overwrites classification_uncertainty/ or classification/.
 _exp_tag = "defvar"
 _out_dir = os.path.join(_base_out, f"classification_{_exp_tag}")
@@ -594,7 +599,7 @@ _feats_df.insert(0, "patient_id",
 _feats_df  = _feats_df.drop(columns=["fname"])
 _feats_path = os.path.join(_out_dir, f"features_{_exp_tag}.csv")
 _feats_df.to_csv(_feats_path, index=False)
-print(f"\nFeatures saved  → {_feats_path}  (shape: {_feats_df.shape})")
+print(f"\nFeatures saved  -> {_feats_path}  (shape: {_feats_df.shape})")
 
 # Retrain best MLP on train split; ensemble predictions on test split
 _hp       = best_hyperparams
@@ -657,12 +662,12 @@ for _i, _fi in enumerate(_te_idx):
     })
 _pred_path = os.path.join(_out_dir, f"predictions_{_exp_tag}.csv")
 pd.DataFrame(_pred_rows).to_csv(_pred_path, index=False)
-print(f"Predictions saved → {_pred_path}")
+print(f"Predictions saved -> {_pred_path}")
 
 # mlp_defvar.pt
 _mlp_path = os.path.join(_out_dir, f"mlp_{_exp_tag}.pt")
 torch.save(_first_mlp.state_dict(), _mlp_path)
-print(f"MLP model saved  → {_mlp_path}  (seed={seeds[0]})")
+print(f"MLP model saved  -> {_mlp_path}  (seed={seeds[0]})")
 
 # metrics_defvar.json
 _metrics_out = {
@@ -697,7 +702,7 @@ _metrics_out = {
 _json_path = os.path.join(_out_dir, f"metrics_{_exp_tag}.json")
 with open(_json_path, "w") as _jf:
     json.dump(_metrics_out, _jf, indent=2)
-print(f"Metrics saved    → {_json_path}")
+print(f"Metrics saved    -> {_json_path}")
 
 # results_defvar.csv
 _result_rows = []
@@ -717,10 +722,10 @@ for _si, _s in enumerate(best_fold_info['seeds']):
         })
 _results_csv = os.path.join(_out_dir, f"results_{_exp_tag}.csv")
 pd.DataFrame(_result_rows).to_csv(_results_csv, index=False)
-print(f"Results saved    → {_results_csv}")
+print(f"Results saved    -> {_results_csv}")
 
 
-# ── Feature importance analysis for deformation_variance_mean ──────────────────────────────────────
+# Feature importance analysis for deformation_variance_mean
 # Retrains with best hyperparameters on one seed (5 folds) to measure:
 #   (a) First-layer weight magnitude for deformation_variance_mean vs other features.
 #   (b) Permutation importance — accuracy drop when deformation_variance_mean is permuted.
@@ -811,7 +816,7 @@ def analyse_defvar_importance():
         print(f"    #{rank:>2}: {sel[fi]:<58}  {mag:.6f}{tag}")
 
     print(f"\n--- (b) Permutation importance for deformation_variance_mean ---")
-    print(f"  Positive drop = accuracy falls when feature permuted → feature is informative")
+    print(f"  Positive drop = accuracy falls when feature permuted -> feature is informative")
     print(f"  deformation_variance_mean  mean drop: {np.mean(p_drops):+.4f}  std: {np.std(p_drops):.4f}")
 
 analyse_defvar_importance()

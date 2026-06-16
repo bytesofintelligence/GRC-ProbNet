@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # Geo-Radio Classification (original + Experiment 1)  
+# Geo-Radio Classification (original + Experiment 1)  
 # 
 # This notebook is used to train the classification model on the ASOCA Dataset.
 # The notebook assumes the previous scripts have ran, which have saved the following models:
@@ -12,8 +12,12 @@
 # If you have run the `anatomix-fine-tuning.py` and the `atlas-istn-anatomix.py` files, these will automatically be generated for you.
 # 
 # This model will segment the ASOCA images as directed by the config CSV file `data/config/inference.csv`.
+# Core idea is: CT scan -> anatomix segmentation -> Atlas-ISTN registration -> 
+#     extract features (geometric, radiomics, uncertainty optional) -> MLP classifier
 
-# # Imports and Global Config
+# Entire uncertainty experiment is controlled by --use-uncertainty flag (only the feature vector changes)
+
+# Imports and Global Config
 
 import sys
 import os
@@ -63,7 +67,7 @@ USE_UNCERTAINTY_FEATURES = _args.use_uncertainty
 UNCERTAINTY_CSV = _args.uncertainty_csv
 RUN_RESNET = _args.run_resnet
 
-# # Class Mapping
+# Class Mapping
 # *(should match "class_mapping" in `data/config/config.json`)*
 
 class_mapping = {
@@ -80,7 +84,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(device)
 
 
-# # Load STN
+# Load STN
 
 stn_path = "output/mm-whs/full-stn/train/model/stn.pt"
 # Since the trained STN may have been trained with a different crop_size, 
@@ -99,7 +103,7 @@ stn = FullSTN3D(input_size=crop_size, input_channels=2*(num_classes-1), device=d
 stn.load_state_dict(torch.load(stn_path))
 stn.eval()
 
-# # Load dataset
+# Load dataset
 
 dataset_test_base = ImageSegmentationOneHotDataset("data/config/inference.csv",
                                             num_classes, anatomix_roi_size, spacing,
@@ -111,7 +115,7 @@ dataset_test = CacheDataset(data=dataset_test_base, transform=None, cache_rate=1
 dataset_test.get_sample = dataset_test_base.get_sample
 dataloader_test = ThreadDataLoader(dataset_test, batch_size=1, shuffle=False)
 
-# # Extract radiomic and deformation data
+# Extract radiomic and deformation data
 # This loop will iterate over each CT test volume in `inference.csv`, creating features per volume in a list.
 # For each test volume, we store the following features for downstream classification:
 # - **label**, described as either "Diseased" or "Healthy" (obtained by parsing the file name).
@@ -173,15 +177,16 @@ for sample_idx, batch in enumerate(tqdm(dataloader_test, desc="extracting featur
     tgt = atlas_label[:, 1:, ...]
     _   = stn(torch.cat((src, tgt), dim=1))
 
+    # used to get geometric features
     T = stn.get_T()
-    full_disp = T - identity_grid
+    full_disp = T - identity_grid # deformation field 
     disp_np = full_disp[0].detach().cpu().numpy()
 
     # per‐structure displacement
     struct_disp = {}
     for L in class_mapping.keys():
         maskL = label_onehot[0, L].bool().cpu().numpy()  
-        disp_vox = disp_np[maskL]
+        disp_vox = disp_np[maskL] # all displacement vectors inside that structure
         struct_disp[L] = disp_vox
 
     # per‐structure radiomics
@@ -230,7 +235,7 @@ for sample_idx, batch in enumerate(tqdm(dataloader_test, desc="extracting featur
 # After this loop, `subjects` is a list of length N (test cases),
 # and each `subjects[i]` contains all the deformation + radiomics for that case.
 
-# # MLP classification
+# MLP classification
 # Here, we perform hyperparameter optimisation using `optuna` to find the best classification model for the diseased data.
 # We perform 5-fold stratified cross-validation over 3 seeds to achieve confidence in the low volume of data. 
 
@@ -249,6 +254,7 @@ MAX_DEF_PC = 3
 # First, we load per-structure uncertainty CSV and build a lookup from sample_id to class_id 
 # CSV is always loaded such that both baseline and uncertainty experiment 1 can reuse the same df_full 
 # USE_UNCERTAINTY_FEATURES flag controls only whether the unc_* columns enter selected_cols in objective()
+# uses the outputs from compute_uncertainty.py (which used the outputs from test_uncertainty())
 _unc_df = pd.read_csv(UNCERTAINTY_CSV)
 
 print("Uncertainty CSV verification")
@@ -282,13 +288,16 @@ else:
 rows = []
 for subj in subjects:
     row = {}
-    
+    # Constructing uncertainty features 
+    # for each subject, add a row for unc_{name} (one per structure) to the dataframe
+    # these are mean binary entropy inside each structure ... computed across multi-seed 
+    # Aantomix registrations  
     for L, name in class_mapping.items():
         disp_vox = subj["struct_disp"][L]
         n_vox = disp_vox.shape[0]
         
         if n_vox < 1:
-            # no voxels → all zeros
+            # no voxels -> all zeros
             evr = np.zeros(MAX_DEF_PC, dtype=float)
         else:
             u, s, vh = np.linalg.svd(disp_vox, full_matrices=False)
@@ -593,13 +602,13 @@ for _si, _s in enumerate(best_fold_info['seeds']):
         })
 _results_csv = f"results_{_exp_tag}.csv"
 pd.DataFrame(_result_rows).to_csv(_results_csv, index=False)
-print(f"\nResults saved → {_results_csv}")
+print(f"\nResults saved -> {_results_csv}")
 
 
 # For the uncertainty exp, feature importance analysis is used to understand 
 # whether model is actually relying on the uncertainty features, and which ones
 #  Retrains with best hyperparameters on one seed (5 folds) to measure
-#   (a) First-layer weight magnitudes, which is a proxy for how much each input feature is used.
+#   (a) First-layer weight magnitudes, which is a proxy for how much each input feature is used. 
 #   ((b) Permutation importance for unc_* features, this is an accuracy-drop measure) - not used in report.
 if USE_UNCERTAINTY_FEATURES:
     def analyse_uncertainty_importance():
@@ -658,6 +667,9 @@ if USE_UNCERTAINTY_FEATURES:
             mdl.eval()
 
             # (a) first-layer weight magnitude per input feature
+            # for each uncertainty feature, compute the mean absolute weight of 
+            # the first layer's weights corresponding to that feature
+            # larger magnitude means greater influence 
             first_lin = next(m for m in mdl.modules() if isinstance(m, torch.nn.Linear))
             w_imp += first_lin.weight.detach().abs().mean(dim=0).cpu().numpy()
 
@@ -668,6 +680,9 @@ if USE_UNCERTAINTY_FEATURES:
             base_acc = accuracy_score(yvl.astype(int), b_pred)
 
             # (b) Permutation importance for the 7 uncertainty features
+            # e.g. unc_aorta gets shuffled, by rng.permutation. If the accuacy drops, 
+            # then that unc_aorta feature is informative. If accuracy stays the same, 
+            # then the model doesn't rely on it much 
             rng = np.random.RandomState(42)
             for col in unc_cols:
                 fi        = sel.index(col)
@@ -706,7 +721,7 @@ if USE_UNCERTAINTY_FEATURES:
             print(f"    #{rank:>2}: {sel[fi]:<58}  {mag:.6f}{tag}")
 
         print(f"\n--- (b) Permutation importance for uncertainty features ---")
-        print(f"  Positive drop = accuracy falls when feature permuted → feature is informative")
+        print(f"  Positive drop = accuracy falls when feature permuted -> feature is informative")
         print(f"  {'Feature':<50}  {'Mean drop':>10}  {'Std':>8}")
         print(f"  {'-'*72}")
         for col in unc_cols:
@@ -715,8 +730,10 @@ if USE_UNCERTAINTY_FEATURES:
 
     analyse_uncertainty_importance()
 
+# Overall, 7 new additional entropy features appended to baseline feature vector 
+# in the uncertainty experiments. This file consumes the "per_structure_uncertainty" csv
 
-# # ResNet Baseline
+# ResNet Baseline
 # We provide a Resnet-50 model as an Image-only baseline to compare our model against.
 # Disabled by default (--run-resnet flag required). 
 

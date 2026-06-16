@@ -38,16 +38,16 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 
-# ---------------------------------------------------------------------------
+
 # Constants
-# ---------------------------------------------------------------------------
+
 
 SEEDS = [42, 123, 456, 789, 999]
 CORONARY_LABEL = 1  # label index for coronary artery in argmax labelmaps
 
-# ---------------------------------------------------------------------------
+
 # I/O helpers
-# ---------------------------------------------------------------------------
+
 
 def load_transform(path: Path) -> np.ndarray:
     """Load a NIfTI transform field saved by SimpleITK (isVector=True).
@@ -67,9 +67,9 @@ def load_transform(path: Path) -> np.ndarray:
     )
 
 
-# ---------------------------------------------------------------------------
+
 # Core computation
-# ---------------------------------------------------------------------------
+
 
 def compute_deformation_variance_mean(
     uncertainty_root: Path,
@@ -128,9 +128,8 @@ def compute_deformation_variance_mean(
     return val
 
 
-# ---------------------------------------------------------------------------
-# New bundle features: volume variance and pairwise Dice disagreement
-# ---------------------------------------------------------------------------
+
+# insert new bundle features: volume variance and pairwise Dice disagreement
 
 def load_argmax_mask(path: Path) -> np.ndarray:
     """Load a NIfTI image_prime_argmax and return the binary coronary artery mask.
@@ -188,12 +187,12 @@ def compute_pairwise_dice_disagreement(
     """Mean pairwise Dice disagreement (1 – Dice) across all seed pairs.
 
     Algorithm:
-        For N seeds → N*(N-1)/2 pairs:
+        For N seeds -> N*(N-1)/2 pairs:
             dice = 2 * |A ∩ B| / (|A| + |B|)
             disagreement = 1 - dice
         result = mean(disagreements)
 
-    Empty intersection of both masks → dice = 1 (perfect agreement on emptiness).
+    Empty intersection of both masks -> dice = 1 (perfect agreement on emptiness).
     Returns 0.0 if fewer than 2 masks are available.
     """
     masks = []
@@ -225,9 +224,9 @@ def compute_pairwise_dice_disagreement(
     return val
 
 
-# ---------------------------------------------------------------------------
+
 # Discovery helpers
-# ---------------------------------------------------------------------------
+
 
 def discover_sample_ids(uncertainty_root: Path, seeds: list) -> list:
     """Infer sample indices by scanning the first seed folder for transform files."""
@@ -249,9 +248,9 @@ def discover_sample_ids(uncertainty_root: Path, seeds: list) -> list:
     return ids
 
 
-# ---------------------------------------------------------------------------
+
 # Main
-# ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(

@@ -148,7 +148,7 @@ def main():
     
     # Ranking
     ranked = sorted(zip(names, means, stds), key=lambda x: x[1], reverse=True)
-    print("\nClasses ranked by mean entropy (highest → lowest):")
+    print("\nClasses ranked by mean entropy (highest -> lowest):")
     print(f"  {'Rank':<5} {'Class':<20} {'Mean H':>8}  {'Std H':>8}")
     print("  " + "-" * 45)
     for rank, (name, mean, std) in enumerate(ranked, 1):

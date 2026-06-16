@@ -924,7 +924,7 @@ def test_uncertainty(args):
     """Multi-seed test-time uncertainty estimation.
 
     For each Anatomix checkpoint in args.anatomix_checkpoints:
-      - Run the full preprocessing pipeline (Anatomix inference → bbox → crop → one-hot)
+      - Run the full preprocessing pipeline (Anatomix inference -> bbox -> crop -> one-hot)
       - Feed the resulting segmentation through the SAME frozen trained STN
       - Save the warped atlas outputs labelled by seed
 
@@ -1064,7 +1064,7 @@ def test_uncertainty(args):
         del dataset_seed, dataloader_seed
         gc.collect()
         torch.cuda.empty_cache()
-        print(f'[UNCERTAINTY] Seed {seed_label} done → {seed_out_dir}')
+        print(f'[UNCERTAINTY] Seed {seed_label} done -> {seed_out_dir}')
 
     print(separator)
     print(f'[UNCERTAINTY] All seeds complete. Outputs in: {out_root}')
@@ -1113,7 +1113,7 @@ if __name__ == '__main__':
     
     # FOLD HANDLING 
     
-    # Accept bare digit: --fold 1 → fold_1
+    # Accept bare digit: --fold 1 -> fold_1
     if args.fold.isdigit():
         args.fold = f'fold_{args.fold}'
 

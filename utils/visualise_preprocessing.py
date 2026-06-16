@@ -181,7 +181,7 @@ for s_idx, img_path in enumerate(tqdm(img_paths, desc="Processing samples")):
     n_res = int(np.prod([D1, H1, W1]))
     n_crp = int(np.prod([D2, H2, W2]))
     pct   = (1.0 - n_crp / n_res) * 100.0
-    print(f"  Voxel count            : {n_res:,} → {n_crp:,}  ({pct:.1f}% removed)")
+    print(f"  Voxel count            : {n_res:,} -> {n_crp:,}  ({pct:.1f}% removed)")
 
     # Axial slice selection ────────────────────────────────────────────────────
     heart_z  = mask_centroid_z(cleaned_mask)              # heart centroid in resampled vol
@@ -259,6 +259,6 @@ for s_idx, img_path in enumerate(tqdm(img_paths, desc="Processing samples")):
     out_a = os.path.join(OUT_DIR, f"preproc_pipeline_{fname}.png")
     fig.savefig(out_a, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
-    print(f"  → Figure A saved: {out_a}")
+    print(f"  -> Figure A saved: {out_a}")
 
 print("\n[Done] All figures written to plots/")

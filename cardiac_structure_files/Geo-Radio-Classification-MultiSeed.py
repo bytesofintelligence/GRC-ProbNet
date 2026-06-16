@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # Geo-Radio Classification — Multi-Seed Radiomic Uncertainty (Experiment 2)
+# Geo-Radio Classification — Multi-Seed Radiomic Uncertainty (Experiment 2)
 #
 # This is a fork of Geo-Radio-Classification.py
 #
@@ -19,7 +19,7 @@
 #
 # All outputs are written to separate files from Experiments 1 and baseline.
 
-# # Imports and Global Config
+# Imports and Global Config
 
 import sys
 import os
@@ -119,7 +119,7 @@ class_mapping = {
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(device)
 
-# # Load STN
+# Load STN
 # Since the trained STN may have been trained with a different crop_size, 
 # we check if there is a crop_size.json in the same directory to load the correct crop_size.
 # ensures preprocessing and model dimensions are consistent
@@ -157,7 +157,7 @@ dataset_test = CacheDataset(data=dataset_test_base, transform=None, cache_rate=1
 dataset_test.get_sample = dataset_test_base.get_sample
 dataloader_test = ThreadDataLoader(dataset_test, batch_size=1, shuffle=False)
 
-# # Extract radiomic and deformation data
+# Extract radiomic and deformation data
 # This loop will iterate over each CT test volume in `inference.csv`, creating features per volume in a list.
 # For each test volume, we store the following features for downstream classification:
 # - **label**, described as either "Diseased" or "Healthy" (obtained by parsing the file name).
@@ -669,10 +669,10 @@ for _si, _s in enumerate(best_fold_info["seeds"]):
             "auc":         _m["auc"],
         })
 pd.DataFrame(_result_rows).to_csv(RESULTS_CSV, index=False)
-print(f"\nResults saved → {RESULTS_CSV}")
+print(f"\nResults saved -> {RESULTS_CSV}")
 
 
-# # ResNet Baseline
+# ResNet Baseline
 # We provide a Resnet-50 model as an Image-only baseline to compare our model against.
 # Disabled by default (--run-resnet flag required). 
 if RUN_RESNET:

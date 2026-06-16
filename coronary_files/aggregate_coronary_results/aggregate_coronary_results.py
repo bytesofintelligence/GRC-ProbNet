@@ -1,15 +1,17 @@
+# Take the predictions from the 5-fold cross validation runs and combine them
+# into one final set of results. 
 import json
 import os
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import (
-    accuracy_score,
-    balanced_accuracy_score,
+    accuracy_score, # correct predictions / total predictions
+    balanced_accuracy_score, # accounts for class imbalance: (sensitivity + specificity) / 2
     f1_score,
-    precision_score,
-    recall_score,
-    roc_auc_score,
+    precision_score, # of all diseased predictions, how many were actually diseased
+    recall_score, # of all diseased samples, how many were correctly predicted as diseased
+    roc_auc_score,  # measures ranking quality (i.e., how well the model ranks positive samples higher than negative samples)
 )
 
 FOLDS = [1, 2, 3, 4, 5]
@@ -19,6 +21,7 @@ OUT_DIR = BASE_DIR
 
 
 def specificity_score(y_true, y_pred):
+    # of all healthy samples, how many were correctly predicted as healthy
     tn = ((y_true == 0) & (y_pred == 0)).sum()
     fp = ((y_true == 0) & (y_pred == 1)).sum()
     return tn / (tn + fp) if (tn + fp) > 0 else 0.0
@@ -38,6 +41,7 @@ def compute_metrics(y_true, y_pred, y_prob):
 
 def main():
     dfs = []
+    # loads predictions from every fold and combines them into one dataframe
     for fold in FOLDS:
         path = os.path.join(BASE_DIR, f"fold_{fold}", PRED_FILE)
         df = pd.read_csv(path)
@@ -50,7 +54,8 @@ def main():
     all_preds = pd.concat(dfs, ignore_index=True)
     all_preds = all_preds.sort_values("patient_id").reset_index(drop=True)
 
-    # Sanity checks
+    # Sanity checks - checks if we actually end up with 40 unique patients 
+    # since ASOCA has 40 patients in total 
     assert all_preds["patient_id"].nunique() == 40, (
         f"Expected 40 unique patient_ids, got {all_preds['patient_id'].nunique()}"
     )
@@ -64,9 +69,10 @@ def main():
     y_true = all_preds["label"].values
     y_pred = all_preds["pred"].values
     y_prob = all_preds["prob"].values
+    # calculates accuracy, auc, f1, precision, recall, specificity, balanced_accuracy
     overall = compute_metrics(y_true, y_pred, y_prob)
 
-    # Per-fold metrics
+    # Per-fold metrics - same metrics as above, but calculated for each fold separately
     fold_metrics = {}
     for fold in FOLDS:
         subset = all_preds[all_preds["fold"] == fold].sort_values("patient_id")
@@ -75,7 +81,12 @@ def main():
             subset["pred"].values,
             subset["prob"].values,
         )
+    # Overall metrics above are calculated across all 40 test predictions together
+    # "If I treat all cross-validation predictions as one big test set, how well did the model perform?"
 
+    # While the mean and std of the per-fold metrics are calculated across the 5 folds 
+    # "how stable is performance across folds?" calculate metric on each fold and then average 
+    
     # Mean ± std across folds
     metric_names = list(next(iter(fold_metrics.values())).keys())
     fold_summary = {}

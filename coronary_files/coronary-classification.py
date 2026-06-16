@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # Coronary Geo-Radio Classification  (Stage 3 — per-fold)
+# # Coronary Geo-Radio Classification - per-fold
 #
-# Pipeline prerequisites (must run in order before this script):
-#   Stage 1 — coronary-seg-finetune.py
+# Pipeline prerequisites:
+#   Stage 1 - coronary-seg-finetune.py
 #             Anatomix coronary segmentation checkpoints:
 #             saved_models/segmentation_asoca/fold_k/*.pth
 #   Stage 2 — coronary-atlas-istn.py
@@ -12,8 +12,8 @@
 #             output/asoca-coronary/fold_k/full-stn/train/model/
 #             {stn.pt, atlas_labelmap_final.nii.gz, crop_size.json}
 #
-# This script (Stage 3):
-#   - Loads the frozen fold-k STN (NOT retrained here).
+# This script:
+#   - Loads the frozen fold-k STN (NOT retrained).
 #   - Runs forward passes on ALL 40 ASOCA patients to extract deformation fields.
 #   - Extracts geometric (SVD) + PyRadiomics features from the coronary ROI.
 #   - Trains MLP on fold-k train patients only; evaluates on fold-k test patients.
@@ -31,8 +31,6 @@
 
 # # Imports and Global Config
 
-# In[ ]:
-
 
 import sys
 import os
@@ -49,10 +47,6 @@ from img.datasets import ImageSegmentationOneHotDataset
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark     = False
 
-
-# In[ ]:
-
-
 _parser = argparse.ArgumentParser(description="Coronary Geo-Radio Classification")
 # Coronary: --fold selects the cross-validation fold and derives all paths automatically.
 _parser.add_argument(
@@ -62,22 +56,22 @@ _parser.add_argument(
 _parser.add_argument(
     "--use-uncertainty", action="store_true", default=False,
     help="Append per-structure uncertainty entropy features to the classifier input. "
-         "Not yet supported for the coronary pipeline — flag is preserved for future use."
+         "Not used here but flag is preserved for future use."
 )
 _parser.add_argument(
     "--uncertainty-csv",
-    # Coronary uncertainty CSV path (not yet generated — commented out in loading section).
+    # Coronary uncertainty CSV path
     default="output/asoca-coronary/uncertainty_analysis/metrics/per_structure_uncertainty.csv",
     help="Path to per_structure_uncertainty.csv produced by compute_uncertainty.py."
 )
 _parser.add_argument(
     "--run-resnet", action="store_true", default=False,
     help="Run the ResNet-50 3D image-only baseline after the MLP experiment. "
-         "Disabled by default — requires a GPU with sufficient VRAM (use gpus24 partition)."
+         "Disabled by default"
 )
 _args = _parser.parse_args()
 
-# Accept bare digit: --fold 1 → fold_1
+# Accept bare digit too
 if _args.fold.isdigit():
     _args.fold = f"fold_{_args.fold}"
 
@@ -95,39 +89,21 @@ crop_size = (96, 96, 96)
 # MM-WHS uses num_classes=8 with 7 cardiac structures.
 num_classes = 2
 
-# Experiment switch — controlled by --use-uncertainty CLI flag.
-# False → baseline (radiomic + geometric only).  Only controls selected_cols in objective().
-# NOTE: uncertainty features are not yet computed for the coronary pipeline.
-#       The flag and UNCERTAINTY_CSV are preserved so the code path can be re-enabled
-#       once coronary uncertainty outputs are available.
 USE_UNCERTAINTY_FEATURES = _args.use_uncertainty
 UNCERTAINTY_CSV = _args.uncertainty_csv
 RUN_RESNET = _args.run_resnet
 
 
 # # Class Mapping
-# *(should match "class_mapping" in `data/config/asoca/config.json`)*
 # Coronary: single foreground class.  MM-WHS had 7 structures (1–7).
-
-# In[ ]:
-
-
 class_mapping = {
         1: "coronary_artery",
     }
 
-
-# In[ ]:
-
-
 device = "cuda" if torch.cuda.is_available() else "cpu" 
 print(device)
 
-
 # # Load STN
-
-# In[ ]:
-
 
 # Coronary: fold-specific STN from Stage-2 outputs.  The STN is loaded frozen
 # and is NOT retrained during classification.
@@ -150,14 +126,10 @@ stn = FullSTN3D(input_size=crop_size, input_channels=2*(num_classes-1), device=d
 stn.load_state_dict(torch.load(stn_path))
 stn.eval()
 
-
 # # Load dataset
 
-# In[ ]:
-
-
-# Helper: auto-discover the lowest-loss finetuned Anatomix checkpoint for a fold.
-# Mirrors _find_best_asoca_fold_checkpoint in coronary-atlas-istn.py.
+# function to auto-discover the lowest-loss finetuned Anatomix checkpoint for a fold.
+# same as _find_best_asoca_fold_checkpoint in coronary-atlas-istn.py
 def _find_best_asoca_fold_checkpoint(fold_id, base_dir="saved_models/segmentation_asoca"):
     fold_dir = os.path.join(base_dir, fold_id)
     prefix   = f"finetuned_asoca_{fold_id}_"
@@ -182,7 +154,6 @@ anatomix_ckpt = _find_best_asoca_fold_checkpoint(fold)
 # are extracted for every patient using the frozen fold-k STN.
 # The MLP classifier later trains only on train patients and tests on test patients.
 # skip_lcc=True: coronary arteries have multiple legitimate connected components
-#   (LCA, RCA, branches) — do NOT discard all but the largest.
 _train_csv = f"{_base_cfg}/{fold}/train.csv"
 _test_csv  = f"{_base_cfg}/{fold}/test.csv"
 
@@ -208,17 +179,12 @@ dataset_test = CacheDataset(data=dataset_test_base, transform=None, cache_rate=1
 dataset_test.get_sample = dataset_test_base.get_sample
 dataloader_test = ThreadDataLoader(dataset_test, batch_size=1, shuffle=False)
 
-
 # # Extract radiomic and deformation data
 # This loop will iterate over each CT test volume in `inference.csv`, creating features per volume in a list.
 # For each test volume, we store the following features for downstream classification:
 # - **label**, described as either "Diseased" or "Healthy" (obtained by parsing the file name).
 # - **struct_disp**, a dictionary keyed per substructure storing the respective deformation displacement field.
 # - **radiomics**, a dictionary keyed per substructure storing the respective radiomics features.
-
-# In[ ]:
-
-
 import torch
 import numpy as np
 import SimpleITK as sitk
@@ -234,7 +200,7 @@ radiomics_settings = {
 }
 extractor = featureextractor.RadiomicsFeatureExtractor(**radiomics_settings)
 
-# Coronary: fold-specific atlas from Stage-2 outputs.
+# Coronary: fold-specific atlas from previous stage outputs
 atlas_label_itk = sitk.ReadImage(f"{_base_out}/full-stn/train/model/atlas_labelmap_final.nii.gz")
 
 arr_lab = sitk.GetArrayFromImage(atlas_label_itk)
@@ -251,7 +217,7 @@ else:
     one_hot    = torch.nn.functional.one_hot(labels_int, num_classes=num_classes)
     atlas_label = one_hot.permute(3, 0, 1, 2).unsqueeze(0).float().to(device)
 
-# Coronary: batch_size is always 1 (one patient at a time); no need to repeat atlas.
+# Coronary: batch_size is always 1 (one patient at a time)
 batch_size = 1
 atlas_label = atlas_label.repeat(batch_size, 1, 1, 1, 1)
 
@@ -260,11 +226,10 @@ identity_grid = stn.grid.unsqueeze(0)
 identity_grid = stn.move_grid_dims(identity_grid)
 identity_grid = identity_grid.repeat(batch_size, 1, 1, 1, 1).to(device)
 
-# SEMANTIC_FEATURES: initialised empty; populated on the first successful radiomics call.
-# Empty-mask patients are stored as None and backfilled after the loop once the feature
-# count is known.  In MM-WHS this variable was defined inside the else-branch, which
+# SEMANTIC_FEATURES: initialised empty and is populated on the first successful 
+# radiomics call. previously, for MM-WHS this variable was defined inside the else-branch, which
 # would crash if the very first patient had an empty mask (rare for cardiac structures
-# but more likely for coronary arteries with sparse Anatomix predictions).
+# but more likely for coronary arteries with their sparse Anatomix predictions)
 SEMANTIC_FEATURES = []
 
 subjects = []
@@ -284,16 +249,16 @@ for _dataloader, _split in [(dataloader_train, "train"), (dataloader_test, "test
         src = label_onehot[:, 1:, ...]
         tgt = atlas_label[:, 1:, ...]
         _   = stn(torch.cat((src, tgt), dim=1))
-
+        # used to get geometric features
         T = stn.get_T()
-        full_disp = T - identity_grid
+        full_disp = T - identity_grid # deformation field 
         disp_np = full_disp[0].detach().cpu().numpy()
 
         # per‐structure displacement
         struct_disp = {}
         for L in class_mapping.keys():
             maskL = label_onehot[0, L].bool().cpu().numpy()
-            disp_vox = disp_np[maskL]
+            disp_vox = disp_np[maskL] # all displacement vectors inside that structure
             struct_disp[L] = disp_vox
 
         # per‐structure radiomics
@@ -305,9 +270,8 @@ for _dataloader, _split in [(dataloader_train, "train"), (dataloader_test, "test
         for L, name in class_mapping.items():
             mask_np = label_onehot[0, L].cpu().numpy().astype(np.uint8)
             if mask_np.sum() == 0:
-                # Coronary masks can be empty if Anatomix prediction is all-background.
-                # Store None here; backfilled with NaN array after the loop once
-                # SEMANTIC_FEATURES length is known.
+                # Coronary masks can be empty if Anatomix prediction is all-background
+                # Store None here; backfilled after the loop once SEMANTIC_FEATURES length is known.
                 radiomics[L] = None
             else:
                 sitk_mask = sitk.GetImageFromArray(mask_np)
@@ -333,7 +297,7 @@ for _dataloader, _split in [(dataloader_train, "train"), (dataloader_test, "test
 
         # Collect everything into a single dict for this subject
         subject_data = {
-            "sample_idx": sample_idx,   # positional index in dataloader; matches sample_id in uncertainty CSV
+            "sample_idx": sample_idx,   # matches sample_id in uncertainty CSV
             "fname":     fname,
             "label":     img_type,
             "split":     _split,        # "train" or "test" — used to partition MLP inputs
@@ -358,9 +322,6 @@ for _subj in subjects:
 # Here, we perform hyperparameter optimisation using `optuna` to find the best classification model for the diseased data.
 # We perform 5-fold stratified cross-validation over 3 seeds to achieve confidence in the low volume of data. 
 
-# In[ ]:
-
-
 import torch
 import numpy as np
 import pandas as pd
@@ -373,39 +334,6 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 MAX_DEF_PC = 3
 
-# ── Step 1 & 2: Load per-structure uncertainty CSV and build sample_id → class_id lookup ──────────
-# The CSV is always loaded so both baseline and uncertainty experiments can reuse the same df_full.
-# USE_UNCERTAINTY_FEATURES controls only whether the unc_* columns enter selected_cols in objective().
-#
-# CORONARY NOTE: uncertainty CSV is not yet generated for the coronary pipeline.
-# The entire block below is commented out.  Re-enable once compute_uncertainty.py has been
-# run for the coronary fold outputs.
-#
-# _unc_df = pd.read_csv(UNCERTAINTY_CSV)
-#
-# print("\n=== Uncertainty CSV — Step 1 verification ===")
-# print(f"  File     : {UNCERTAINTY_CSV}")
-# print(f"  Columns  : {list(_unc_df.columns)}")
-# print(f"  Shape    : {_unc_df.shape}   "
-#       f"(will be {len(subjects) * 1} rows × 6 cols once coronary uncertainty is complete)")
-# print(_unc_df.head(14).to_string(index=False))
-#
-# # Pivot: index = sample_id (0…N-1), columns = class_id (1), values = mean_entropy
-# _unc_pivot = _unc_df.pivot(index="sample_id", columns="class_id", values="mean_entropy")
-# _unc_pivot.columns.name = None
-#
-# print(f"\n=== Uncertainty pivot table — Step 2 verification ===")
-# print(f"  Pivoted shape : {_unc_pivot.shape}   (rows = sample_id, cols = class_id 1)")
-# print(f"  Column IDs    : {list(_unc_pivot.columns)}")
-# print(f"  Sample 0 row  :")
-# print(_unc_pivot.iloc[0].to_string())
-#
-# missing_ids = [subj["sample_idx"] for subj in subjects if subj["sample_idx"] not in _unc_pivot.index]
-# if missing_ids:
-#     print(f"\n  [WARN] {len(missing_ids)} subjects have no uncertainty entry yet.")
-# else:
-#     print(f"\n  All {len(subjects)} subjects have uncertainty entries. ✓")
-
 rows = []
 for subj in subjects:
     row = {}
@@ -415,7 +343,7 @@ for subj in subjects:
         n_vox = disp_vox.shape[0]
         
         if n_vox < 1:
-            # no voxels → all zeros
+            # no voxels -> all zeros
             evr = np.zeros(MAX_DEF_PC, dtype=float)
         else:
             u, s, vh = np.linalg.svd(disp_vox, full_matrices=False)
@@ -437,20 +365,6 @@ for subj in subjects:
             col = f"{feat_name}_{name}"
             row[col] = float(rad_vec[idx])
 
-    # Step 4 — Uncertainty features: one masked-mean binary entropy per foreground structure.
-    # Always written into the row so both experiments share the same df_full.
-    # USE_UNCERTAINTY_FEATURES controls only whether selected_cols in objective() includes these.
-    #
-    # CORONARY NOTE: uncertainty pivot (_unc_pivot) is not yet available.
-    # The unc_* columns are commented out until compute_uncertainty.py has been run.
-    # sid = subj["sample_idx"]
-    # for L, name in class_mapping.items():
-    #     row[f"unc_{name}"] = (
-    #         float(_unc_pivot.loc[sid, L])
-    #         if sid in _unc_pivot.index
-    #         else float("nan")
-    #     )
-
     row["fname"] = subj["fname"]  # full path — used to derive patient_id in outputs
     row["label"] = subj["label"]  # "Normal" or "Diseased"
     row["split"] = subj["split"]  # "train" or "test" — needed for fold-based MLP split
@@ -463,14 +377,7 @@ print(df_full.isna().any()[lambda x: x])
 print(df_full.head(4))
 print("Shape of df_full:", df_full.shape)
 
-# ── Step 4 print: confirm uncertainty columns are present ────────────────────────────────────────
-# CORONARY NOTE: unc_* columns are not yet in df_full (uncertainty not yet computed).
-# _unc_col_names = [f"unc_{name}" for _, name in class_mapping.items()]
-# print(f"\n=== Uncertainty columns in df_full (Step 4 verification) ===")
-# print(f"  {_unc_col_names}")
-# print(f"  Example subject 0:\n{df_full[_unc_col_names].iloc[0].to_string()}")
-
-# ── Step 6: Feature dimensionality summary ───────────────────────────────────────────────────────
+# Useful to have a feature dimensionality summary
 _n_structs   = len(class_mapping)                          # 1 (coronary_artery only)
 _n_rad_feats = len(SEMANTIC_FEATURES) * _n_structs         # e.g. 107 × 1 = 107
 _n_geo_feats = MAX_DEF_PC * _n_structs                     # 3 × 1 = 3
@@ -498,12 +405,6 @@ seeds = [10, 101, 202]
 _train_mask = (df_full["split"] == "train").to_numpy()
 _val_mask   = (df_full["split"] == "test").to_numpy()
 
-# get_folds (MM-WHS StratifiedKFold helper) is not used for coronary;
-# the predefined fold split replaces it.  Kept as a comment for reference.
-# def get_folds(seed):
-#     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
-#     return list(skf.split(np.zeros((N, 1)), y_global))
-
 def objective(trial):
     hidden_units = trial.suggest_int("hidden_units", 8, 512, step=8)
     lr           = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
@@ -520,14 +421,13 @@ def objective(trial):
         for i, feat_name in enumerate(SEMANTIC_FEATURES):
             selected_cols.append(f"{feat_name}_{name}")
 
-    # Step 5 — append uncertainty columns when the experiment flag is on
     # CORONARY NOTE: uncertainty columns are not yet in df_full; this block is preserved
-    # for future use but will have no effect while USE_UNCERTAINTY_FEATURES=False.
+    # for future use but will have no effect here 
     if USE_UNCERTAINTY_FEATURES:
         for _, name in class_mapping.items():
             selected_cols.append(f"unc_{name}")
 
-    # Step 7 — on trial 0, confirm uncertainty columns are in X_np
+    # If we're on trial 0, just confirm uncertainty columns are in X_np
     if trial.number == 0:
         unc_in_sel = [c for c in selected_cols if c.startswith("unc_")]
         print(f"\n[Trial 0] USE_UNCERTAINTY_FEATURES={USE_UNCERTAINTY_FEATURES}")
@@ -538,9 +438,8 @@ def objective(trial):
     X_np = X_df.to_numpy(dtype=np.float32)           # numpy array (N_samples, D_trial)
 
     if trial.number == 0:
-        print(f"[Trial 0] X_np.shape          : {X_np.shape}  ← uncertainty features {'included' if USE_UNCERTAINTY_FEATURES else 'excluded'}")
+        print(f"[Trial 0] X_np.shape          : {X_np.shape}  <- uncertainty features {'included' if USE_UNCERTAINTY_FEATURES else 'excluded'}")
     y_np = y_global.copy()                           # numpy array (N_samples,), strings "Normal"/"Diseased"
-    # N_samples = len(y_np)  # unused after StratifiedKFold removal
 
     X_all = torch.from_numpy(X_np).float()
     y_all = torch.from_numpy((y_np == "Diseased").astype(np.float32)).to(device)
@@ -610,8 +509,9 @@ def objective(trial):
                 tn, fp, fn, tp = cm.ravel()
                 sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0.0
                 specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
-                # AUC uses the raw probability score (not the binary prediction).
-                # try/except guards against the rare fold where only one class appears.
+                # AUC is added. It uses raw probability scores, so reflects the
+                # model's confidence in its predictions, not just the binary outcome
+                # try/except guards against the rare fold where only one class appears
                 try:
                     auc = roc_auc_score(y_true, val_probs)
                 except ValueError:
@@ -663,7 +563,7 @@ best_fold_info   = {
     'per_seed_fold_metrics': best_trial.user_attrs["per_seed_fold_metrics"]
 }
 
-# 7) Aggregate all metrics over seeds & folds
+# Aggregate all metrics over seeds & folds
 all_accuracies    = []
 all_precisions    = []
 all_recalls       = []
@@ -719,12 +619,12 @@ for seed_idx, s in enumerate(best_fold_info['seeds']):
         print(f"  Confusion Matrix:\n{m['confusion_matrix']}\n")
 
 
-# ── Step 8: Save per-fold results ────────────────────────────────────────────────────────────────
+# Save per-fold results to a labelled CSV - useful for later analysis 
 _exp_tag = "uncertainty" if USE_UNCERTAINTY_FEATURES else "baseline"
 _out_dir = os.path.join(_base_out, "classification")
 os.makedirs(_out_dir, exist_ok=True)
 
-# ── features.csv: raw feature vectors for all patients ───────────────────────────────────────────
+# features.csv: raw feature vectors for all patients 
 _meta_cols = ["fname", "label", "split"]
 _feat_cols = [c for c in df_full.columns if c not in _meta_cols]
 _feats_df  = df_full[_meta_cols + _feat_cols].copy()
@@ -733,9 +633,9 @@ _feats_df.insert(0, "patient_id",
 _feats_df  = _feats_df.drop(columns=["fname"])
 _feats_path = os.path.join(_out_dir, "features.csv")
 _feats_df.to_csv(_feats_path, index=False)
-print(f"\nFeatures saved  → {_feats_path}  (shape: {_feats_df.shape})")
+print(f"\nFeatures saved  -> {_feats_path}  (shape: {_feats_df.shape})")
 
-# ── Retrain best MLP (all seeds) on train split; ensemble predictions on test split ──────────────
+# Retrain best MLP (all seeds) on train split; ensemble predictions on test split 
 _hp       = best_hyperparams
 _lyrs_out = [_hp["hidden_units"]] * _hp["num_layers"] + [1]
 
@@ -797,12 +697,12 @@ for _i, _fi in enumerate(_te_idx):
     })
 _pred_path = os.path.join(_out_dir, "predictions.csv")
 pd.DataFrame(_pred_rows).to_csv(_pred_path, index=False)
-print(f"Predictions saved → {_pred_path}")
+print(f"Predictions saved -> {_pred_path}")
 
 # mlp.pt: MLP weights from the first seed (deterministic reference model)
 _mlp_path = os.path.join(_out_dir, "mlp.pt")
 torch.save(_first_mlp.state_dict(), _mlp_path)
-print(f"MLP model saved  → {_mlp_path}  (seed={seeds[0]})")
+print(f"MLP model saved  -> {_mlp_path}  (seed={seeds[0]})")
 
 # metrics.json: aggregate Optuna metrics + ensemble test metrics for this fold
 _metrics_out = {
@@ -831,9 +731,9 @@ _metrics_out = {
 _json_path = os.path.join(_out_dir, "metrics.json")
 with open(_json_path, "w") as _jf:
     json.dump(_metrics_out, _jf, indent=2)
-print(f"Metrics saved    → {_json_path}")
+print(f"Metrics saved    -> {_json_path}")
 
-# results CSV: one row per (seed × fold), consistent with MM-WHS format
+# results csv 
 _result_rows = []
 for _si, _s in enumerate(best_fold_info['seeds']):
     for _fi, _m in enumerate(best_fold_info['per_seed_fold_metrics'][_si], start=1):
@@ -851,138 +751,12 @@ for _si, _s in enumerate(best_fold_info['seeds']):
         })
 _results_csv = os.path.join(_out_dir, f"results_{_exp_tag}.csv")
 pd.DataFrame(_result_rows).to_csv(_results_csv, index=False)
-print(f"Results saved    → {_results_csv}")
+print(f"Results saved    -> {_results_csv}")
 
 
-# ── Step 9: Feature importance analysis (uncertainty experiment only) ─────────────────────────────
-# Retrains with best hyperparameters on one seed (5 folds) to measure:
-#   (a) First-layer weight magnitudes — proxy for how much each input feature is used.
-#   (b) Permutation importance for unc_* features — direct accuracy-drop measure.
-# Only runs when USE_UNCERTAINTY_FEATURES=True; informative for assessing whether the
-# network actually relies on the 7 new features.
-
-if USE_UNCERTAINTY_FEATURES:
-    def analyse_uncertainty_importance():
-        hp          = best_trial.user_attrs["hyperparams"]
-        unc_cols    = [f"unc_{name}" for _, name in class_mapping.items()]
-
-        # Reconstruct selected_cols exactly as the best trial used them
-        sel = []
-        for L, name in class_mapping.items():
-            for i in range(hp["def_pc_amt"]):
-                sel.append(f"def_pc{i+1}_{name}")
-            for feat_name in SEMANTIC_FEATURES:
-                sel.append(f"{feat_name}_{name}")
-        for _, name in class_mapping.items():
-            sel.append(f"unc_{name}")
-
-        X     = df_full[sel].to_numpy(dtype=np.float32)
-        y     = y_global.copy()
-        n_in  = X.shape[1]
-        unc_indices = [sel.index(c) for c in unc_cols]
-        layers_fi   = [hp["hidden_units"]] * hp["num_layers"] + [1]
-
-        w_imp   = np.zeros(n_in)
-        p_drops = {c: [] for c in unc_cols}
-        n_folds = 0
-
-        s_fi = seeds[0]
-        random.seed(s_fi); np.random.seed(s_fi); torch.manual_seed(s_fi)
-        skf_fi = StratifiedKFold(n_splits=5, shuffle=True, random_state=s_fi)
-
-        print(f"\n=== Feature Importance Analysis (seed={s_fi}, best HP={hp}) ===")
-        print(f"  X shape           : {X.shape}")
-        print(f"  Uncertainty cols  : {unc_cols}")
-        print(f"  Uncertainty indices in X: {unc_indices}")
-
-        for train_i, val_i in skf_fi.split(np.zeros((len(y), 1)), y):
-            Xtr, Xvl = X[train_i], X[val_i]
-            ytr = (y[train_i] == "Diseased").astype(np.float32)
-            yvl = (y[val_i]   == "Diseased").astype(np.float32)
-
-            sc   = StandardScaler()
-            Xtr_s = sc.fit_transform(Xtr)
-            Xvl_s = sc.transform(Xvl)
-
-            Xtr_t = torch.from_numpy(Xtr_s).float().to(device)
-            ytr_t = torch.from_numpy(ytr).to(device)
-
-            mdl  = MLP(n_in, layers_fi, dropout=hp["dropout"]).to(device)
-            opt  = torch.optim.AdamW(mdl.parameters(), lr=hp["lr"])
-            crit = torch.nn.BCEWithLogitsLoss()
-
-            for _ in range(hp["num_epochs"]):
-                mdl.train()
-                loss = crit(mdl(Xtr_t).squeeze(1), ytr_t)
-                opt.zero_grad(); loss.backward(); opt.step()
-
-            mdl.eval()
-
-            # (a) First-layer weight magnitude per input feature
-            first_lin = next(m for m in mdl.modules() if isinstance(m, torch.nn.Linear))
-            w_imp += first_lin.weight.detach().abs().mean(dim=0).cpu().numpy()
-
-            # Baseline accuracy on the validation fold
-            with torch.no_grad():
-                Xvl_t  = torch.from_numpy(Xvl_s).float().to(device)
-                b_pred = (torch.sigmoid(mdl(Xvl_t).squeeze(1)).cpu().numpy() >= 0.5).astype(int)
-            base_acc = accuracy_score(yvl.astype(int), b_pred)
-
-            # (b) Permutation importance — only for the 7 uncertainty features
-            rng = np.random.RandomState(42)
-            for col in unc_cols:
-                fi        = sel.index(col)
-                Xvl_perm  = Xvl_s.copy()
-                Xvl_perm[:, fi] = rng.permutation(Xvl_perm[:, fi])
-                with torch.no_grad():
-                    p_pred = (torch.sigmoid(
-                        mdl(torch.from_numpy(Xvl_perm).float().to(device)).squeeze(1)
-                    ).cpu().numpy() >= 0.5).astype(int)
-                p_drops[col].append(base_acc - accuracy_score(yvl.astype(int), p_pred))
-
-            n_folds += 1
-
-        w_imp /= n_folds
-
-        # ── Report ──────────────────────────────────────────────────────────────────────────────
-        print(f"\n--- (a) First-layer weight magnitude (avg over {n_folds} folds) ---")
-        print(f"  {'Feature':<50}  {'Weight Mag':>10}")
-        print(f"  {'-'*62}")
-        unc_mags = []
-        for col in unc_cols:
-            fi  = sel.index(col)
-            mag = float(w_imp[fi])
-            unc_mags.append(mag)
-            print(f"  {col:<50}  {mag:>10.6f}")
-
-        print(f"\n  Uncertainty features — mean: {np.mean(unc_mags):.6f}  "
-              f"max: {np.max(unc_mags):.6f}  min: {np.min(unc_mags):.6f}")
-        print(f"  All features         — mean: {float(w_imp.mean()):.6f}  "
-              f"max: {float(w_imp.max()):.6f}")
-
-        ranked = sorted(enumerate(w_imp), key=lambda x: x[1], reverse=True)
-        print(f"\n  Top-10 features by first-layer weight magnitude:")
-        for rank, (fi, mag) in enumerate(ranked[:10], 1):
-            tag = "  ← UNCERTAINTY" if sel[fi].startswith("unc_") else ""
-            print(f"    #{rank:>2}: {sel[fi]:<58}  {mag:.6f}{tag}")
-
-        print(f"\n--- (b) Permutation importance for uncertainty features ---")
-        print(f"  Positive drop = accuracy falls when feature permuted → feature is informative")
-        print(f"  {'Feature':<50}  {'Mean drop':>10}  {'Std':>8}")
-        print(f"  {'-'*72}")
-        for col in unc_cols:
-            drops = p_drops[col]
-            print(f"  {col:<50}  {np.mean(drops):>+10.4f}  {np.std(drops):>8.4f}")
-
-    analyse_uncertainty_importance()
-
-
-# # ResNet Baseline
+# ResNet Baseline
 # We provide a Resnet-50 model as an Image-only baseline to compare our model against.
-# Disabled by default (--run-resnet flag required). Run once separately on gpus24 partition;
-# results don't change between baseline/uncertainty experiments so re-running is wasteful.
-
-# In[ ]:
+# Disabled by default (--run-resnet flag required). 
 
 if RUN_RESNET:
     import torch

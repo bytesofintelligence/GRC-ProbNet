@@ -717,6 +717,14 @@ def train(args):
 
 
 def test(args):
+    """
+    Tests one trained Anatomix and STN pipeline
+    For each test image, 1) loads iamges and labelmap through ImageSegmentationOneHotDataset
+    and produces the image_prime segmentation, 2) warps the image to the atlas space, 
+    3) warps the atlas labelmap to the image space, and 4) computes metrics for each substructure and 
+    5) saves them to a CSV file.
+    Effectively, Image -> Anatomix segmentation -> STN registration -> metrics and outputs 
+    """
     # Load the crop size written by train() so test images get identical dimensions
     crop_size_path = os.path.join(args.model, 'crop_size.json')
     if os.path.exists(crop_size_path):
@@ -893,6 +901,9 @@ def test(args):
 
 def test_uncertainty(args):
     """Multi-seed test-time uncertainty estimation.
+    Evaluates multiple Anatomix checkpoints (seeds) through the same frozen STN
+    Saves all resulting warped atlases and deformation fields so that voxel-wise
+    segmentation and registration uncertainty can be quantified across seeds
 
     for each anatomix checkpoint in args.anatomix_checkpoints:
       - run the full preprocessing pipeline (Anatomix inference -> bbox -> crop -> one-hot)
@@ -900,6 +911,10 @@ def test_uncertainty(args):
       - save the warped atlas outputs labelled by seed
 
     the STN is loaded once and shared across all seeds - outputs are for downstream uncertainty analysis only
+    Same STN, same atlas, same test image -> only Anatomix changes 
+
+    E.g. for one voxel, five anatomix seeds produce same or different argmax predictions, 
+    which can be quantified as entropy to see whether that voxel is uncertain 
     """
     print(separator)
     print('Starting UNCERTAINTY ESTIMATION...')
@@ -943,6 +958,8 @@ def test_uncertainty(args):
     os.makedirs(out_root, exist_ok=True)
 
     for ckpt_path in args.anatomix_checkpoints:
+        # for each checkpoint: 1) load Anatomix seed, 2) generate segmentations,
+        # 3) pass through frozen STN, 4) save outputs for downstream uncertainty analysis
         seed_label = os.path.basename(os.path.dirname(ckpt_path))
         print(separator)
         print(f'[UNCERTAINTY] Processing seed: {seed_label}  ({ckpt_path})')
@@ -962,8 +979,8 @@ def test_uncertainty(args):
             normalizer=config.normalizer,
             binarize=config.config['binarize'],
             augmentation=False,
-            fixed_crop_size=saved_crop_size,
-            model_checkpoint=ckpt_path,
+            fixed_crop_size=saved_crop_size, # guarantees same crop dimensions
+            model_checkpoint=ckpt_path, # now driven by a different Anatomix model 
         )
         dataloader_seed = ThreadDataLoader(dataset_seed, batch_size=1, shuffle=False)
 
@@ -974,6 +991,9 @@ def test_uncertainty(args):
 
                 source = image_prime[:, 1:, ...]      # foreground one-hot channels
                 target = atlas_lab_t[:, 1:, ...]
+
+                # STN sees source: anatomix segmentation, target: atlas labelmap, 
+                # and computes the deformation field to align them.
 
                 # STN forward: computes T and T_inv from this seed's segmentation.
                 config.stn(torch.cat((source, target), dim=1))
@@ -1016,6 +1036,9 @@ def test_uncertainty(args):
 
                 prefix = os.path.join(seed_out_dir, f'sample_{index}')
 
+                # for every seed and image, save the soft and hard versions of 
+                # warped atlas labelmap, image_prime, and deformation fields for 
+                # downstream uncertainty analysis
                 for sitk_img, suffix in [
                     (wal_sitk,        '_warped_atlas_labelmap.nii.gz'),
                     (wal_argmax_sitk, '_warped_atlas_labelmap_argmax.nii.gz'),
@@ -1033,7 +1056,7 @@ def test_uncertainty(args):
         del dataset_seed, dataloader_seed
         gc.collect()
         torch.cuda.empty_cache()
-        print(f'[UNCERTAINTY] Seed {seed_label} done → {seed_out_dir}')
+        print(f'[UNCERTAINTY] Seed {seed_label} done -> {seed_out_dir}')
 
     print(separator)
     print(f'[UNCERTAINTY] All seeds complete. Outputs in: {out_root}')

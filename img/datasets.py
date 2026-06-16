@@ -305,7 +305,7 @@ class ImageSegmentationOneHotDataset(Dataset):
             print(f'[PREPROC] Bounding box stats across {len(valid_sizes)} valid images:')
             for ax, ax_name in enumerate(['D (z/axial)', 'H (y/coronal)', 'W (x/sagittal)']):
                 vals = [s[ax] for s in valid_sizes]
-                print(f'[PREPROC]   {ax_name}: min={min(vals)}, max={max(vals)} → crop dim = {crop_size[ax]} (rounded to mult of 16)')
+                print(f'[PREPROC]   {ax_name}: min={min(vals)}, max={max(vals)} -> crop dim = {crop_size[ax]} (rounded to mult of 16)')
 
             print(f'[PREPROC] Fixed crop size = {crop_size}')
         else:

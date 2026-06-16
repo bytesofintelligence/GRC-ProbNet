@@ -45,7 +45,7 @@ SEG_PATH = "data/MM-WHS/labels/ct_train_1004_label.nii.gz"
 
 OUT_PATH  = "plots/anatomix_5seeds_predictions.png"
 
-# MM-WHS label remapping: raw value → class index 1-7
+# MM-WHS label remapping: raw value -> class index 1-7
 REMAP = {0: 0, 205: 1, 420: 2, 500: 3, 550: 4, 600: 5, 820: 6, 850: 7}
 
 # Structure names for legend
@@ -115,7 +115,7 @@ def remap_labels(label_arr):
 
 def run_inference(model, img_np):
     """img_np: float32 array (z, y, x).  Returns argmax label (z, y, x)."""
-    # Add batch + channel dims → (1, 1, z, y, x)
+    # Add batch + channel dims -> (1, 1, z, y, x)
     img_t = torch.from_numpy(img_np).unsqueeze(0).unsqueeze(0).float().to(device)
     roi   = (CROP_SIZE, CROP_SIZE, CROP_SIZE)
     with torch.no_grad():
@@ -230,4 +230,4 @@ plt.suptitle(
 
 plt.tight_layout(rect=[0, 0.05, 1, 1])
 plt.savefig(OUT_PATH, dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
-print(f"\nSaved → {OUT_PATH}")
+print(f"\nSaved -> {OUT_PATH}")

@@ -1,6 +1,9 @@
 """
 Post-processing script: compute voxel-wise uncertainty across multiple Anatomix seeds.
 
+It is the bridge between "test_uncertainty()" which generates warped atlas outputs 
+for each seed, and the Geo-Radio-Classification script which consumes the uncertainty metrics.
+
 Each seed folder contains warped atlas outputs from a single STN forward pass with
 a different Anatomix pseudo-label seed. Uncertainty is measured as the spread of
 predicted soft probability maps across those seeds.
@@ -416,8 +419,7 @@ def process_sample(
         soft_maps.append(soft)
         argmax_maps.append(argm)
         print(f"  seed {seed}: soft {soft.shape}, argmax {argm.shape}")
-
-    
+        
     # Next, compute per-seed multiclass entropy maps
     for seed, soft in zip(seeds, soft_maps):
         seed_entropy = compute_entropy(soft)  # (D, H, W)
@@ -440,21 +442,20 @@ def process_sample(
     N = stack.shape[0]
     print(f"  Stack shape: {stack.shape}")
 
-    
     # compute mean probs, multiclass predictive entropy, consensus argmax
     mean_probs = compute_mean_probs(stack)                       # (D, H, W, C)
     entropy = compute_entropy(mean_probs)                        # (D, H, W)
+    # finally the majority vote across all seeds (argmax of mean probabilities)
     consensus = mean_probs.argmax(axis=-1).astype(np.int32)      # (D, H, W)
 
-    
-    # Find per-seed KL divergence from mean. Average over seeds is Jensen-Shannon Divergence
+    # Find per-seed KL divergence from mean
     kl_maps = []
     print(f"  Per-seed KL divergence from mean (mean over all voxels):")
     for seed, soft in zip(seeds, soft_maps):
         kl = compute_kl_divergence(soft, mean_probs)  # (D, H, W)
         kl_maps.append(kl)
         print(f"    seed {seed}: mean KL = {kl.mean():.6f}  max KL = {kl.max():.6f}")
-
+    # Average KL over seeds is actually the Jensen-Shannon Divergence 
     avg_kl = np.mean(np.stack(kl_maps, axis=0), axis=0)  # (D, H, W) == JSD
     print(f"  Average KL (JSD): mean = {avg_kl.mean():.6f}  max = {avg_kl.max():.6f}")
 
@@ -466,6 +467,7 @@ def process_sample(
     print(f"  Saved: average KL divergence map")
 
     # Find the disagreement map
+    # count of unique predicted labels across seeds
     disagreement = compute_disagreement(argmax_stack)  # (D, H, W)
     
     # Per-class binary entropy maps - save for all classes (including background)

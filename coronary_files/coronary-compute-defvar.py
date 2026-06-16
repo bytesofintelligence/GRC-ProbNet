@@ -35,15 +35,15 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 
-# ---------------------------------------------------------------------------
+
 # Constants
-# ---------------------------------------------------------------------------
+
 
 SEEDS = [42, 123, 456, 789, 999]
 
-# ---------------------------------------------------------------------------
+
 # I/O helpers
-# ---------------------------------------------------------------------------
+
 
 def load_transform(path: Path) -> np.ndarray:
     """Load a NIfTI transform field saved by SimpleITK (isVector=True).
@@ -63,9 +63,9 @@ def load_transform(path: Path) -> np.ndarray:
     )
 
 
-# ---------------------------------------------------------------------------
+
 # Core computation
-# ---------------------------------------------------------------------------
+
 
 def compute_deformation_variance_mean(
     uncertainty_root: Path,
@@ -124,9 +124,9 @@ def compute_deformation_variance_mean(
     return val
 
 
-# ---------------------------------------------------------------------------
+
 # Discovery helpers
-# ---------------------------------------------------------------------------
+
 
 def discover_sample_ids(uncertainty_root: Path, seeds: list) -> list:
     """Infer sample indices by scanning the first seed folder for transform files."""
@@ -148,9 +148,9 @@ def discover_sample_ids(uncertainty_root: Path, seeds: list) -> list:
     return ids
 
 
-# ---------------------------------------------------------------------------
+
 # Main
-# ---------------------------------------------------------------------------
+
 
 def main():
     parser = argparse.ArgumentParser(

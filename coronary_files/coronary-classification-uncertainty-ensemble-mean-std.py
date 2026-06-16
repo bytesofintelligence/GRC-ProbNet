@@ -31,8 +31,6 @@
 
 # # Imports and Global Config
 
-# In[ ]:
-
 
 import sys
 import os
@@ -49,8 +47,6 @@ from img.datasets import ImageSegmentationOneHotDataset
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark     = False
 
-
-# In[ ]:
 
 
 _parser = argparse.ArgumentParser(description="Coronary Geo-Radio Classification")
@@ -93,27 +89,15 @@ RUN_RESNET = _args.run_resnet
 
 
 # # Class Mapping
-
-# In[ ]:
-
-
 class_mapping = {
         1: "coronary_artery",
     }
-
-
-# In[ ]:
-
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(device)
 
 
 # # Load STN
-
-# In[ ]:
-
-
 stn_path = f"{_base_out}/full-stn/train/model/stn.pt"
 crop_size_path = os.path.join(os.path.dirname(stn_path), "crop_size.json")
 if os.path.exists(crop_size_path):
@@ -130,10 +114,6 @@ stn.eval()
 
 
 # # Load dataset
-
-# In[ ]:
-
-
 def _find_best_asoca_fold_checkpoint(fold_id, base_dir="saved_models/segmentation_asoca"):
     fold_dir = os.path.join(base_dir, fold_id)
     prefix   = f"finetuned_asoca_{fold_id}_"
@@ -209,8 +189,6 @@ dataloader_test = ThreadDataLoader(dataset_test, batch_size=1, shuffle=False)
 #   Final feature vector: [F_mean || F_std] = 220-D (110 mean + 110 std).
 #   SelectKBest(f_classif, k=K) reduces to K features — fitted ONLY on the training fold.
 
-# In[ ]:
-
 
 import torch
 import numpy as np
@@ -254,7 +232,7 @@ identity_grid = identity_grid.repeat(batch_size, 1, 1, 1, 1).to(device)
 SEMANTIC_FEATURES = []
 
 # _feature_bank: accumulates per-seed features for each (split, sample_idx).
-# Key: (split, sample_idx) → dict with per-seed geo SVD values and radiomics vectors.
+# Key: (split, sample_idx) -> dict with per-seed geo SVD values and radiomics vectors.
 # Mean and std are computed AFTER all seeds are processed, per subject.
 _feature_bank = {}
 
@@ -292,7 +270,7 @@ for _seed in SEEDS:
             fname        = batch["fname"][0]
             img_type     = "Diseased" if "Diseased" in fname else "Normal"
 
-            # ── Geometric: SVD singular values of displacement at foreground voxels ──
+            # Geometric: SVD singular values of displacement at foreground voxels
             src = label_onehot[:, 1:, ...]
             tgt = atlas_label[:, 1:, ...]
             _   = stn(torch.cat((src, tgt), dim=1))
@@ -314,7 +292,7 @@ for _seed in SEEDS:
                     evr[:n_comp] = s[:n_comp]
                 struct_evr_seed[L] = evr
 
-            # ── Radiomics ────────────────────────────────────────────────────────────
+            # Radiomics
             img_np   = image_tensor[0, 0].detach().cpu().numpy()
             sitk_img = sitk.GetImageFromArray(img_np)
             sitk_img.SetSpacing(spacing)
@@ -335,7 +313,7 @@ for _seed in SEEDS:
                     feats = [float(result.get(fn, float("nan"))) for fn in SEMANTIC_FEATURES]
                     radiomics_seed[L] = np.array(feats, dtype=float)
 
-            # ── Accumulate in feature bank ───────────────────────────────────────────
+            # Accumulate in feature bank
             key = (_split, sample_idx)
             if key not in _feature_bank:
                 _feature_bank[key] = {
@@ -353,7 +331,7 @@ for _seed in SEEDS:
     del _ds_tr_base_s, _ds_tr_s, _dl_tr_s
     del _ds_te_base_s, _ds_te_s, _dl_te_s
 
-# ── Compute mean AND std across seeds → build subjects list ─────────────────────────────
+# Compute mean AND std across seeds -> build subjects list
 # Both mean and std are computed per subject, per feature, across SEEDS seeds.
 # Final 220-D vector = [F_mean || F_std], assembled BEFORE scaling or classification.
 print(f"\nComputing ensemble mean+std features ({len(SEEDS)} seeds: {SEEDS})")
@@ -412,8 +390,6 @@ for _subj in subjects:
 
 # # MLP classification with SelectKBest feature selection
 
-# In[ ]:
-
 
 import torch
 import numpy as np
@@ -426,7 +402,7 @@ from sklearn.model_selection import StratifiedKFold
 from torchvision.ops import MLP
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 
-# ── Build 220-D feature rows: [F_mean || F_std] ──────────────────────────────────────────
+# Build 220-D feature rows: [F_mean || F_std]
 # Column convention:
 #   Mean block (110-D): def_pc{i+1}_{name}_mean, {feat_name}_{name}_mean
 #   Std  block (110-D): def_pc{i+1}_{name}_std,  {feat_name}_{name}_std
@@ -466,13 +442,13 @@ print(df_full.isna().any()[lambda x: x])
 print(df_full.head(4))
 print("Shape of df_full:", df_full.shape)
 
-# ── Identify mean vs std feature columns ─────────────────────────────────────────────────
+# Identify mean vs std feature columns
 _meta_cols     = ["fname", "label", "split"]
 _mean_cols     = [c for c in df_full.columns if c not in _meta_cols and c.endswith("_mean")]
 _std_cols      = [c for c in df_full.columns if c not in _meta_cols and c.endswith("_std")]
 _all_feat_cols = _mean_cols + _std_cols      # 220-D: mean block then std block
 
-# ── Sanity check ─────────────────────────────────────────────────────────────────────────
+# Sanity check
 print("\nUsing ensemble mean+std features")
 _feat_means = df_full[_all_feat_cols].mean()
 _feat_vars  = df_full[_all_feat_cols].var()
@@ -481,7 +457,7 @@ print(f"First 5 feature variances: {_feat_vars.values[:5].round(6)}")
 _near_const = (_feat_vars < 1e-10).sum()
 print(f"Near-constant features (var < 1e-10): {_near_const} / {len(_all_feat_cols)}")
 
-# ── Feature dimensionality summary ───────────────────────────────────────────────────────
+# Feature dimensionality summary
 _n_structs   = len(class_mapping)
 _n_rad_feats = len(SEMANTIC_FEATURES) * _n_structs
 _n_geo_feats = MAX_DEF_PC * _n_structs
@@ -514,7 +490,7 @@ def objective(trial):
     k_best       = trial.suggest_int("k_best", 10, len(_all_feat_cols))
 
     if trial.number == 0:
-        print(f"\n[Trial 0] experiment=ensemble_mean_std  (220D → SelectKBest(k={k_best}))")
+        print(f"\n[Trial 0] experiment=ensemble_mean_std  (220D -> SelectKBest(k={k_best}))")
         print(f"[Trial 0] total feature columns: {len(_all_feat_cols)}")
 
     X_np = df_full[_all_feat_cols].to_numpy(dtype=np.float32)   # (N, 220)
@@ -547,12 +523,12 @@ def objective(trial):
             y_train   = y_all[train_idx]
             y_val     = y_all[val_idx]
 
-            # Step 1 — scale (fit on train only)
+            # scale (fit on train only)
             scaler         = StandardScaler()
             X_train_scaled = scaler.fit_transform(X_np[train_idx])   # (n_tr, 220)
             X_val_scaled   = scaler.transform(X_np[val_idx])         # (n_val, 220)
 
-            # Step 2 — SelectKBest (fit on train only — no test leakage)
+            # SelectKBest (fit on train only — no test leakage)
             selector    = SelectKBest(f_classif, k=k_best)
             X_train_sel = selector.fit_transform(
                 X_train_scaled,
@@ -563,7 +539,7 @@ def objective(trial):
             X_train = torch.from_numpy(X_train_sel).float().to(device)
             X_val   = torch.from_numpy(X_val_sel).float().to(device)
 
-            # Step 3 — MLP with k_best inputs
+            # MLP with k_best inputs
             layers = [hidden_units] * num_layers + [1]
             model = MLP(k_best, layers, dropout=dropout).to(device)
             optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
@@ -594,6 +570,8 @@ def objective(trial):
                 tn, fp, fn, tp = cm.ravel()
                 sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0.0
                 specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+                # AUC uses the raw probability score (not the binary prediction).
+                # try/except guards against the rare fold where only one class appears.
                 try:
                     auc = roc_auc_score(y_true, val_probs)
                 except ValueError:
@@ -701,21 +679,21 @@ for seed_idx, s in enumerate(best_fold_info['seeds']):
         print(f"  Confusion Matrix:\n{m['confusion_matrix']}\n")
 
 
-# ── Step 8: Save per-fold results ────────────────────────────────────────────────────────
+# Save per-fold results to a labelled CSV - useful for later analysis 
 _exp_tag = "ensemble_mean_std"
 _out_dir = os.path.join(_base_out, f"classification_{_exp_tag}")
 os.makedirs(_out_dir, exist_ok=True)
 
-# ── features.csv: 220-D feature vectors for all patients ─────────────────────────────────
+# features.csv: 220-D feature vectors for all patients
 _feats_df = df_full[_meta_cols + _all_feat_cols].copy()
 _feats_df.insert(0, "patient_id",
     _feats_df["fname"].apply(lambda p: os.path.basename(p).replace(".nii.gz", "")))
 _feats_df = _feats_df.drop(columns=["fname"])
 _feats_path = os.path.join(_out_dir, "features.csv")
 _feats_df.to_csv(_feats_path, index=False)
-print(f"\nFeatures saved  → {_feats_path}  (shape: {_feats_df.shape})")
+print(f"\nFeatures saved  -> {_feats_path}  (shape: {_feats_df.shape})")
 
-# ── Retrain best MLP (all seeds) on train split; ensemble predictions on test split ──────
+# Retrain best MLP (all seeds) on train split; ensemble predictions on test split
 _hp     = best_hyperparams
 _k_best = _hp["k_best"]
 _lyrs_out = [_hp["hidden_units"]] * _hp["num_layers"] + [1]
@@ -724,12 +702,12 @@ _X_out  = df_full[_all_feat_cols].to_numpy(dtype=np.float32)   # (N, 220)
 _tr_idx = _train_mask.nonzero()[0]
 _te_idx = _val_mask.nonzero()[0]
 
-# Step 1 — scale on ALL 32 train patients
+# Scale on ALL 32 train patients
 _scl_out    = StandardScaler()
 _Xtr_scaled = _scl_out.fit_transform(_X_out[_tr_idx])   # (32, 220)
 _Xte_scaled = _scl_out.transform(_X_out[_te_idx])       # (8, 220)
 
-# Step 2 — SelectKBest: fit on ALL 32 train patients, apply to 8 test patients.
+# SelectKBest: fit on ALL 32 train patients, apply to 8 test patients.
 # Labels used only for fitting the selector — test labels never seen here.
 _ytr_bin      = (y_global[_tr_idx] == "Diseased").astype(int)
 _selector_out = SelectKBest(f_classif, k=_k_best)
@@ -776,12 +754,12 @@ for _i, _fi in enumerate(_te_idx):
     })
 _pred_path = os.path.join(_out_dir, "predictions.csv")
 pd.DataFrame(_pred_rows).to_csv(_pred_path, index=False)
-print(f"Predictions saved → {_pred_path}")
+print(f"Predictions saved -> {_pred_path}")
 
 # mlp.pt: MLP weights from the first seed
 _mlp_path = os.path.join(_out_dir, "mlp.pt")
 torch.save(_first_mlp.state_dict(), _mlp_path)
-print(f"MLP model saved  → {_mlp_path}  (seed={seeds[0]})")
+print(f"MLP model saved  -> {_mlp_path}  (seed={seeds[0]})")
 
 # metrics.json
 _metrics_out = {
@@ -812,7 +790,7 @@ _metrics_out = {
 _json_path = os.path.join(_out_dir, "metrics.json")
 with open(_json_path, "w") as _jf:
     json.dump(_metrics_out, _jf, indent=2)
-print(f"Metrics saved    → {_json_path}")
+print(f"Metrics saved    -> {_json_path}")
 
 # results CSV: one row per (seed × inner-fold), consistent with other experiments
 _result_rows = []
@@ -832,13 +810,11 @@ for _si, _s in enumerate(best_fold_info['seeds']):
         })
 _results_csv = os.path.join(_out_dir, f"results_{_exp_tag}.csv")
 pd.DataFrame(_result_rows).to_csv(_results_csv, index=False)
-print(f"Results saved    → {_results_csv}")
+print(f"Results saved    -> {_results_csv}")
 
 
 # # ResNet Baseline
 # Disabled by default (--run-resnet flag required).
-
-# In[ ]:
 
 if RUN_RESNET:
     import torch

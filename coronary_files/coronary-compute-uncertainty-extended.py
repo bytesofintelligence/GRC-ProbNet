@@ -26,9 +26,9 @@ import matplotlib.colors as mcolors
 import nibabel as nib
 import numpy as np
 
-# ---------------------------------------------------------------------------
+
 # Constants
-# ---------------------------------------------------------------------------
+
 
 SEEDS = [42, 123, 456, 789, 999]
 
@@ -40,15 +40,12 @@ CLASS_NAMES = {
 # Probability thresholds evaluated during the soft-mask sweep.
 THRESHOLDS = [0.001, 0.005, 0.01, 0.05, 0.1]
 
-# ---------------------------------------------------------------------------
+
 # I/O helpers
-# ---------------------------------------------------------------------------
+
 
 def load_soft_labelmap(path: Path) -> np.ndarray:
-    """Load soft probability map and return array of shape (D, H, W, C).
-
-    NIfTI files are saved with shape (D, H, W, 1, C); the singleton batch
-    dimension at axis-3 is squeezed out here.
+    """Load soft probability map, squeeze batch dimension, return (D, H, W, C).
     """
     data = nib.load(path).get_fdata()
     assert data.ndim == 5 and data.shape[3] == 1, (
@@ -68,9 +65,9 @@ def save_nifti(data: np.ndarray, ref_img: nib.Nifti1Image, out_path: Path) -> No
     nib.save(out, str(out_path))
 
 
-# ---------------------------------------------------------------------------
+
 # Uncertainty computations
-# ---------------------------------------------------------------------------
+
 
 def compute_mean_probs(stack: np.ndarray) -> np.ndarray:
     """Mean over seed axis. Input (N, D, H, W, C), output (D, H, W, C)."""
@@ -78,7 +75,7 @@ def compute_mean_probs(stack: np.ndarray) -> np.ndarray:
 
 
 def compute_entropy(probs: np.ndarray, eps: float = 1e-8) -> np.ndarray:
-    """Predictive (multiclass) entropy from a probability map.
+    """Multiclass predictive entropy from probability map.
 
     H = -sum_c [ p_c * log(p_c + eps) ]
 
@@ -133,9 +130,9 @@ def compute_disagreement(argmax_stack: np.ndarray) -> np.ndarray:
     return disagreement
 
 
-# ---------------------------------------------------------------------------
+
 # Threshold sweep for per-structure binary entropy
-# ---------------------------------------------------------------------------
+
 
 def compute_threshold_sweep(
     mean_probs: np.ndarray,
@@ -144,23 +141,16 @@ def compute_threshold_sweep(
 ) -> list:
     """Masked mean binary entropy for each foreground class at every threshold τ.
 
-    For class c and threshold τ:
-        soft mask:  mask_c = mean_probs[..., c] > τ
-        metric:     mean( H_c[mask_c] )
-
-    The soft mask restricts the average to voxels with at least τ probability
-    mass for the class, excluding the vast number of near-zero background voxels
-    that would otherwise dilute the entropy estimate.
-
-    Background (class 0) is skipped.
+    For class c and threshold τ, restrict the entropy average to voxels where 
+    mean_probs[..., c] > τ. This excludes near-zero background voxels that would 
+    just dilute the estimate. background (class 0) is skipped.
 
     Args:
         mean_probs:  (D, H, W, C) mean probability map across seeds
         sample_id:   integer sample index for labelling rows
         thresholds:  list of float probability thresholds
 
-    Returns:
-        List of dicts with keys:
+    Returns a list of dicts with keys:
             sample_id, class_id, class_name, threshold, mean_entropy, voxel_count
     """
     rows = []
@@ -188,33 +178,27 @@ def select_threshold(
     thresholds: list,
     min_voxel_count: int = 10,
 ) -> float:
-    """Select the probability threshold that best discriminates per-structure uncertainty.
+    """Pick the threshold with the highest CV of per-structure entropy across all samples.
 
-    Selection criterion: maximise the coefficient of variation (CV = std / mean)
-    of per-structure mean binary entropy aggregated across all samples and
-    foreground classes.  A high CV indicates the threshold produces the most
-    differentiated per-structure estimates rather than a flat, diluted signal.
-
-    A threshold is rejected if any (sample, class) pair falls below
-    min_voxel_count — this prevents degenerate averages over empty masks caused
-    by thresholds that are too aggressive for small structures.
-
-    Falls back to the smallest threshold if every candidate is rejected.
+    Coefficient of variation (CV = std / mean)
+    A high CV means the threshold produces well-differentiated per-structure
+     estimates rather than just a flat diluted signal. Thresholds where any (sample, class) 
+     pair has fewer than min_voxel_count voxels are rejected. Falls back to the smallest
+     threshold if all of the candidates are rejected. 
 
     Args:
         all_sweep_rows:   combined list of row dicts from compute_threshold_sweep
         thresholds:       ordered list of threshold values
         min_voxel_count:  minimum valid mask size per (sample, class) pair
 
-    Returns:
-        Selected threshold (float).
+    Returns the selected threshold (float).
     """
     best_tau = thresholds[0]
     best_cv = -np.inf
 
     for tau in thresholds:
         rows = [r for r in all_sweep_rows if r["threshold"] == tau]
-        # Reject if any class/sample pair has too few voxels
+        # reject if any sample pair has too few voxels
         if any(r["voxel_count"] < min_voxel_count for r in rows):
             continue
         entropies = [r["mean_entropy"] for r in rows
@@ -269,9 +253,9 @@ def print_threshold_summary(
     )
 
 
-# ---------------------------------------------------------------------------
+
 # Sanity checks
-# ---------------------------------------------------------------------------
+
 
 def validate_stack(stack: np.ndarray, sample_id: int) -> None:
     """Check shapes match and probabilities sum to 1 across classes."""
@@ -285,9 +269,9 @@ def validate_stack(stack: np.ndarray, sample_id: int) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
+
 # Visualisation
-# ---------------------------------------------------------------------------
+
 
 SEG_CMAP = mcolors.ListedColormap(["black", "#E6194B"])
 SEG_NORM = mcolors.BoundaryNorm(boundaries=np.arange(-0.5, 2.5), ncolors=2)
@@ -392,9 +376,9 @@ def save_entropy_on_ct(
     plt.close(fig)
 
 
-# ---------------------------------------------------------------------------
+
 # Per-sample processing
-# ---------------------------------------------------------------------------
+
 
 def process_sample(
     sample_id: int,
@@ -406,7 +390,7 @@ def process_sample(
 ) -> dict:
     """Compute and save all uncertainty outputs for one sample.
 
-    Returns:
+    Returns a dictionary with:
         "sweep":    list of threshold-sweep row dicts (aggregated in main for
                     global threshold selection and final per-structure CSV)
         "per_case": dict with global per-case multiclass entropy stats
@@ -414,9 +398,8 @@ def process_sample(
     print(f"\n--- Sample {sample_id} ---")
     sid = f"sample_{sample_id}"
 
-    # ------------------------------------------------------------------
-    # 1. Load soft probability maps from each seed
-    # ------------------------------------------------------------------
+
+    # Load soft probability maps and argmax segmentations from each seed
     ref_img = None
     soft_maps = []
     argmax_maps = []
@@ -444,9 +427,9 @@ def process_sample(
         argmax_maps.append(argm)
         print(f"  seed {seed}: soft {soft.shape}, argmax {argm.shape}")
 
-    # ------------------------------------------------------------------
-    # 2. Per-seed multiclass entropy maps
-    # ------------------------------------------------------------------
+
+    # Next, compute per-seed multiclass entropy maps
+
     for seed, soft in zip(seeds, soft_maps):
         seed_entropy = compute_entropy(soft)  # (D, H, W)
         save_nifti(
@@ -456,9 +439,9 @@ def process_sample(
         )
     print(f"  Saved: per-seed entropy maps for {len(seeds)} seeds")
 
-    # ------------------------------------------------------------------
-    # 3. Stack and validate
-    # ------------------------------------------------------------------
+
+    # Stack and validate using warning function above
+
     stack = np.stack(soft_maps, axis=0)           # (N, D, H, W, C)
     argmax_stack = np.stack(argmax_maps, axis=0)  # (N, D, H, W)
 
@@ -469,24 +452,23 @@ def process_sample(
     N = stack.shape[0]
     print(f"  Stack shape: {stack.shape}")
 
-    # ------------------------------------------------------------------
-    # 4. Mean probs, multiclass predictive entropy, consensus argmax
-    # ------------------------------------------------------------------
+
+    # compute mean probs, multiclass predictive entropy, consensus argmax
+
     mean_probs = compute_mean_probs(stack)                       # (D, H, W, C)
     entropy = compute_entropy(mean_probs)                        # (D, H, W)
     consensus = mean_probs.argmax(axis=-1).astype(np.int32)      # (D, H, W)
 
-    # ------------------------------------------------------------------
-    # 5. Per-seed KL divergence from mean
-    #    Average over seeds == Jensen-Shannon Divergence
-    # ------------------------------------------------------------------
+
+    # Find per-seed KL divergence from mean. 
+
     kl_maps = []
     print(f"  Per-seed KL divergence from mean (mean over all voxels):")
     for seed, soft in zip(seeds, soft_maps):
         kl = compute_kl_divergence(soft, mean_probs)  # (D, H, W)
         kl_maps.append(kl)
         print(f"    seed {seed}: mean KL = {kl.mean():.6f}  max KL = {kl.max():.6f}")
-
+    # Average KL over seeds is actually the Jensen-Shannon Divergence 
     avg_kl = np.mean(np.stack(kl_maps, axis=0), axis=0)  # (D, H, W) == JSD
     print(f"  Average KL (JSD): mean = {avg_kl.mean():.6f}  max = {avg_kl.max():.6f}")
 
@@ -497,19 +479,15 @@ def process_sample(
     )
     print(f"  Saved: average KL divergence map")
 
-    # ------------------------------------------------------------------
-    # 6. Disagreement map
-    # ------------------------------------------------------------------
+
+    # Find the disagreement map
+    # count of unique predicted labels across seeds
     disagreement = compute_disagreement(argmax_stack)  # (D, H, W)
 
-    # ------------------------------------------------------------------
-    # 7. Per-class binary entropy maps
-    #
-    # For each class c, binary entropy H_c = -p*log(p) - (1-p)*log(1-p)
-    # where p = mean_probs[..., c].  This captures boundary and near-miss
-    # uncertainty invisible to argmax-based masks.  Maps are saved for all
-    # classes (including background) to support downstream analysis.
-    # ------------------------------------------------------------------
+
+    # Per-class binary entropy maps - save for all classes (including background)
+    # Reminder: for each class c, binary entropy is found where p = mean_probs[..., c]. 
+
     C = mean_probs.shape[-1]
     for class_id in range(C):
         h = compute_binary_class_entropy(mean_probs[..., class_id])
@@ -520,9 +498,9 @@ def process_sample(
         )
     print(f"  Saved: per-class binary entropy maps for {C} classes")
 
-    # ------------------------------------------------------------------
-    # 8. Save remaining core NIfTI outputs
-    # ------------------------------------------------------------------
+
+    # Save the remaining core NIfTI outputs
+
     save_nifti(
         entropy,
         ref_img,
@@ -546,21 +524,19 @@ def process_sample(
     )
     print(f"  Saved: entropy, mean_probs, mean_argmax, disagreement")
 
-    # ------------------------------------------------------------------
-    # 9. Threshold sweep for per-structure binary entropy
-    #
-    # The sweep rows are returned to main so threshold selection can be
-    # performed globally across all samples before writing the final CSV.
-    # ------------------------------------------------------------------
+
+    # Next, threshold sweep for per-structure binary entropy
+    # returned to main so global threshold selection can run all samples before 
+    # writing the final per-structure CSV.
     sweep_rows = compute_threshold_sweep(mean_probs, sample_id, thresholds)
     print(
         f"  Threshold sweep: {len(thresholds)} thresholds × {C - 1} foreground "
         f"classes = {len(sweep_rows)} rows"
     )
 
-    # ------------------------------------------------------------------
-    # 10. Global per-case multiclass entropy (preserved for backward compatibility)
-    # ------------------------------------------------------------------
+
+    # Global per-case multiclass entropy (still calculated, even though 
+    # per-structure binary entropy is more robust)   
     mean_entropy_all = float(entropy.mean())
     fg_mask = consensus > 0
     mean_entropy_fg = float(entropy[fg_mask].mean()) if fg_mask.sum() > 0 else float("nan")
@@ -572,9 +548,9 @@ def process_sample(
         "mean_entropy_fg":  mean_entropy_fg,
     }
 
-    # ------------------------------------------------------------------
-    # 11. Visualisations
-    # ------------------------------------------------------------------
+
+    # Visualisations
+
     vis_dir = out_dirs["vis"]
 
     save_entropy_heatmap(
@@ -612,9 +588,9 @@ def process_sample(
     return {"sweep": sweep_rows, "per_case": per_case_row}
 
 
-# ---------------------------------------------------------------------------
+
 # Main
-# ---------------------------------------------------------------------------
+
 
 def discover_sample_ids(uncertainty_root: Path, seeds: list) -> list:
     """Infer sample indices by scanning the first seed folder."""
@@ -637,6 +613,7 @@ def validate_seeds(uncertainty_root: Path, seeds: list, sample_ids: list) -> Non
                 p = uncertainty_root / f"seed_{seed}" / f"sample_{sid}_{suffix}"
                 if not p.exists():
                     missing.append(str(p))
+    # debug 
     if missing:
         raise FileNotFoundError(
             f"Missing {len(missing)} file(s):\n" + "\n".join(missing[:10])
@@ -728,15 +705,15 @@ def main():
         all_sweep_rows.extend(result["sweep"])
         all_per_case.append(result["per_case"])
 
-    # ------------------------------------------------------------------
+
     # Global threshold selection and summary
-    # ------------------------------------------------------------------
+
     selected_tau = select_threshold(all_sweep_rows, args.thresholds)
     print_threshold_summary(all_sweep_rows, args.thresholds, selected_tau)
 
-    # ------------------------------------------------------------------
+
     # Write output CSVs
-    # ------------------------------------------------------------------
+
     sweep_csv  = out_dirs["metrics"] / "per_structure_uncertainty_threshold_sweep.csv"
     struct_csv = out_dirs["metrics"] / "per_structure_uncertainty.csv"
     case_csv   = out_dirs["metrics"] / "per_case_uncertainty.csv"

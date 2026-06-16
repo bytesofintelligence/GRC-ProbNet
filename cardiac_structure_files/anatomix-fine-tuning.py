@@ -60,7 +60,7 @@ _parser = argparse.ArgumentParser()
 _parser.add_argument('--seed', type=int, default=None)
 _args, _ = _parser.parse_known_args()
 
-# Set Python, NumPy, and PyTorch seeds
+# Set Python, NumPy, and PyTorch seeds - all four have independent RNGs 
 SEED = _args.seed if _args.seed is not None else 12345
 random.seed(SEED)
 np.random.seed(SEED)
@@ -71,6 +71,7 @@ torch.cuda.manual_seed(SEED)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
+# we can run multiple seeds without overwriting each other’s checkpoints
 ckpt_dir = f"saved_models/segmentation/seed_{SEED}"
 os.makedirs(ckpt_dir, exist_ok=True)
 

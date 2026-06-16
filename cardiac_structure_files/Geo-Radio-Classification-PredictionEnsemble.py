@@ -58,7 +58,7 @@ _parser.add_argument(
 _parser.add_argument(
     "--run-resnet", action="store_true", default=False,
     help="Run the ResNet-50 3D image-only baseline after the MLP experiment. "
-         "Disabled by default — requires a GPU with sufficient VRAM (use gpus24 partition)."
+         "Disabled by default"
 )
 _args = _parser.parse_args()
 
@@ -275,7 +275,7 @@ for subj in subjects:
         n_vox = disp_vox.shape[0]
 
         if n_vox < 1:
-            # no voxels → all zeros
+            # no voxels -> all zeros
             evr = np.zeros(MAX_DEF_PC, dtype=float)
         else:
             u, s, vh = np.linalg.svd(disp_vox, full_matrices=False)
@@ -672,7 +672,7 @@ for _si, _s in enumerate(best_fold_info['seeds']):
             "auc":         _m["auc"],
         })
 pd.DataFrame(_result_rows).to_csv("results_prediction_ensemble.csv", index=False)
-print(f"\nFold-level results saved → results_prediction_ensemble.csv")
+print(f"\nFold-level results saved -> results_prediction_ensemble.csv")
 
 # Also we save per-subject probability CSV in Experiment 3 
 #
@@ -760,7 +760,7 @@ for cv_seed in seeds:
 
 df_subjects = pd.DataFrame(subject_rows_out)
 df_subjects.to_csv(SUBJECTS_CSV, index=False)
-print(f"Per-subject outputs saved → {SUBJECTS_CSV}")
+print(f"Per-subject outputs saved -> {SUBJECTS_CSV}")
 
 # Summary of prediction uncertainty
 print("\n=== Prediction Uncertainty Summary ===")
