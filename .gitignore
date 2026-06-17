@@ -15,8 +15,8 @@ data/MM-WHS/images/*
 data/MM-WHS/labels/*
 !data/MM-WHS/labels/.gitkeep
 saved_models/*
-!saved_models/.gitkeep
-
+!saved_models/**/
+!saved_models/**/*.gitkeep
 !saved_models/segmentation/.gitkeep
 !saved_models/segmentation/seed_42/.gitkeep
 !saved_models/segmentation/seed_123/.gitkeep
@@ -59,8 +59,9 @@ saved_models/*
 !saved_models/segmentation/fold_5/seed_999/.gitkeep
 unusedFiles/*
 logs/*
-slurm_scripts/*
 plots/*
 *.log
 CLAUDE.md
 .claude/
+slurm_scripts/cardiac_structure/slurm.deepmedic2.64753.log
+slurm_scripts/cardiac_structure/slurm.deepmedic2.64760.log
