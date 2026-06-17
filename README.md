@@ -205,6 +205,7 @@ ls -lt slurm*
 - Recommended hardware: 24GB+ GPU memory
 - Small variations may occur due to randomness in training and ensemble sampling
 - Ensure consistent dataset splits for reproducibility
+- Replace \<USERNAME\> with your username everywhere in the codebase 
 
 ## License
 This project is licensed under the [Apache License 2.0](LICENSE).
