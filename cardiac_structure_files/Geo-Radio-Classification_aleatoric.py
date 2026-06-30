@@ -23,7 +23,10 @@ import sys
 import os
 import json
 import argparse
-sys.path.insert(0, "/vol/biomedic2/bglocker_studproj/<INSERT WHERE ANATOMIX IS FOR YOU>/anatomix/")
+sys.path.insert(
+    0, "/vol/biomedic2/bglocker_studproj/<INSERT WHERE ANATOMIX IS FOR YOU>/anatomix/"
+)
+sys.path.insert(0, "/vol/biomedic2/bglocker_studproj/<USERNAME>/grc-net")
 
 import torch
 from monai.data import ThreadDataLoader, CacheDataset
@@ -37,13 +40,14 @@ torch.backends.cudnn.benchmark     = False
 _parser = argparse.ArgumentParser(description="Geo-Radio Classification")
 _parser.add_argument(
     "--use-uncertainty", action="store_true", default=False,
-    help="Append 7 per-structure uncertainty entropy features to the classifier input. "
+    help="Append 7 per-structure aleatoric uncertainty features to the classifier input. "
          "Not necessary for the baseline (radiomic + geometric features only)."
 )
 _parser.add_argument(
     "--uncertainty-csv",
-    default="output/asoca/uncertainty_analysis/metrics/per_structure_uncertainty.csv",
-    help="Path to per_structure_uncertainty.csv produced by compute_uncertainty.py."
+    default="output/asoca/uncertainty_analysis_aleatoric/metrics/per_structure_uncertainty.csv",
+    help="Path to per_structure_uncertainty.csv produced by compute_uncertainty_aleatoric.py "
+         "(must contain mean_aleatoric column)."
 )
 _parser.add_argument(
     "--run-resnet", action="store_true", default=False,
@@ -261,37 +265,33 @@ print("Uncertainty CSV verification")
 print(f"  File     : {UNCERTAINTY_CSV}")
 print(f"  Columns  : {list(_unc_df.columns)}")
 print(f"  Shape    : {_unc_df.shape}   "
-      f"(will be {len(subjects) * 7} rows × 6 cols once ASOCA uncertainty is complete)")
+      f"(will be {len(subjects) * 7} rows × 5 cols once ASOCA uncertainty is complete)")
 print(_unc_df.head(14).to_string(index=False))
 
-# Pivot the uncertainty dataframe to have one row per sample_id and one column per class_id, with values = mean_entropy
-# this allows easy lookup of the 7 unc features per subject
-# joins onto subjects via subjects[i]["sample_idx"] == sample_id
-_unc_pivot = _unc_df.pivot(index="sample_id", columns="class_id", values="mean_entropy")
-_unc_pivot.columns.name = None   # remove the axis label so col access is clean
+# Single pivot: one aleatoric value per (sample_id, class_id)
+_unc_pivot = _unc_df.pivot(index="sample_id", columns="class_id", values="mean_aleatoric")
+_unc_pivot.columns.name = None
 
 print(f"Uncertainty pivot table verification")
-print(f"  Pivoted shape : {_unc_pivot.shape}   (rows = sample_id, cols = class_id 1–7)")
-print(f"  Column IDs    : {list(_unc_pivot.columns)}")
-print(f"  Sample 0 row  :")
-print(_unc_pivot.iloc[0].to_string())
+print(f"  Pivot shape : {_unc_pivot.shape}   (rows = sample_id, cols = class_id 1–7)")
+print(f"  Column IDs  : {list(_unc_pivot.columns)}")
+print(f"  Sample 0    :\n{_unc_pivot.iloc[0].to_string()}")
 
 missing_ids = [subj["sample_idx"] for subj in subjects if subj["sample_idx"] not in _unc_pivot.index]
-# some useful warning comments
 if missing_ids:
     print(f"\n  [WARN] {len(missing_ids)} subjects have no uncertainty entry yet "
           f"(IDs {missing_ids[:5]}{'...' if len(missing_ids) > 5 else ''}). "
-          f"Their unc_* values will be NaN until the ASOCA uncertainty run is complete.")
+          f"Their unc_aleatoric_* values will be NaN until the ASOCA uncertainty run is complete.")
 else:
     print(f"\n  All {len(subjects)} subjects have uncertainty entries. ✓")
 
 rows = []
 for subj in subjects:
     row = {}
-    # Constructing uncertainty features 
+    # Constructing uncertainty features
     # for each subject, add a row for unc_{name} (one per structure) to the dataframe
-    # these are mean binary entropy inside each structure ... computed across multi-seed 
-    # Aantomix registrations  
+    # these are mean JSD (avg KL from mean) inside each structure's soft mask,
+    # computed across multi-seed Anatomix registrations
     for L, name in class_mapping.items():
         disp_vox = subj["struct_disp"][L]
         n_vox = disp_vox.shape[0]
@@ -319,8 +319,7 @@ for subj in subjects:
             col = f"{feat_name}_{name}"
             row[col] = float(rad_vec[idx])
 
-    # Now, uncertainty features. We have one masked mean binary entropy per foreground structure
-    # note, both experiments share the same df_full so always written into the row 
+    # One aleatoric uncertainty feature per structure: H(mean_p) − JSD
     sid = subj["sample_idx"]
     for L, name in class_mapping.items():
         row[f"unc_{name}"] = (
@@ -339,7 +338,7 @@ print(df_full.isna().any()[lambda x: x])
 print(df_full.head(4))
 print("Shape of df_full:", df_full.shape)
 
-# debug: confirm uncertainty columns are present
+# debug: confirm aleatoric uncertainty columns are present
 _unc_col_names = [f"unc_{name}" for _, name in class_mapping.items()]
 print(f"\n=== Uncertainty columns in df_full")
 print(f"  {_unc_col_names}")
@@ -349,14 +348,13 @@ print(f"  Example subject 0:\n{df_full[_unc_col_names].iloc[0].to_string()}")
 _n_structs   = len(class_mapping)                          # 7
 _n_rad_feats = len(SEMANTIC_FEATURES) * _n_structs         # e.g. 107 × 7 = 749
 _n_geo_feats = MAX_DEF_PC * _n_structs                     # 3 × 7 = 21
-_n_unc_feats = _n_structs                                  # 7 
+_n_unc_feats = _n_structs                                  # 7 (aleatoric per structure)
 
-# some useful prints to confirm feature counts
 print(f"Feature dimensionality")
 print(f"  Radiomic features : {len(SEMANTIC_FEATURES)} per structure × {_n_structs} = {_n_rad_feats}")
 print(f"  Geometric features: {MAX_DEF_PC} PCs × {_n_structs} = {_n_geo_feats}  "
       f"(Optuna searches def_pc_amt in 1–{MAX_DEF_PC})")
-print(f"  Uncertainty feats : {_n_unc_feats}  (one entropy per structure)")
+print(f"  Uncertainty feats : {_n_unc_feats}  (aleatoric per structure × {_n_structs} structures)")
 print(f"  ── df_full total cols (excl. label): {df_full.shape[1] - 1}")
 print(f"  ── Baseline  MLP input (def_pc_amt=MAX_DEF_PC): "
       f"{_n_geo_feats} + {_n_rad_feats} = {_n_geo_feats + _n_rad_feats}")
@@ -389,7 +387,7 @@ def objective(trial):
         for i, feat_name in enumerate(SEMANTIC_FEATURES):
             selected_cols.append(f"{feat_name}_{name}")
 
-    # Now append the uncertainty columns if the experiment 1 flag is on
+    # Append aleatoric uncertainty per structure if the flag is on (7 features total)
     if USE_UNCERTAINTY_FEATURES:
         for _, name in class_mapping.items():
             selected_cols.append(f"unc_{name}")
@@ -584,7 +582,7 @@ for seed_idx, s in enumerate(best_fold_info['seeds']):
 
 
 # Save per-fold results to a labelled CSV - useful for later analysis
-_exp_tag = "uncertainty" if USE_UNCERTAINTY_FEATURES else "baseline"
+_exp_tag = "uncertainty_aleatoric" if USE_UNCERTAINTY_FEATURES else "baseline"
 _result_rows = []
 for _si, _s in enumerate(best_fold_info['seeds']):
     for _fi, _m in enumerate(best_fold_info['per_seed_fold_metrics'][_si], start=1):
@@ -613,7 +611,7 @@ print(f"\nResults saved -> {_results_csv}")
 if USE_UNCERTAINTY_FEATURES:
     def analyse_uncertainty_importance():
         hp          = best_trial.user_attrs["hyperparams"]
-        unc_cols    = [f"unc_{name}" for _, name in class_mapping.items()]
+        unc_cols = [f"unc_{name}" for _, name in class_mapping.items()]
         # reconstruct selected_cols exactly as the best trial used them
         sel = []
         for L, name in class_mapping.items():
@@ -667,9 +665,9 @@ if USE_UNCERTAINTY_FEATURES:
             mdl.eval()
 
             # (a) first-layer weight magnitude per input feature
-            # for each uncertainty feature, compute the mean absolute weight of
+            # for each uncertainty feature, compute the mean absolute weight of 
             # the first layer's weights corresponding to that feature
-            # larger magnitude means greater influence
+            # larger magnitude means greater influence 
             first_lin = next(m for m in mdl.modules() if isinstance(m, torch.nn.Linear))
             w_imp += first_lin.weight.detach().abs().mean(dim=0).cpu().numpy()
 
@@ -680,9 +678,9 @@ if USE_UNCERTAINTY_FEATURES:
             base_acc = accuracy_score(yvl.astype(int), b_pred)
 
             # (b) Permutation importance for the 7 uncertainty features
-            # e.g. unc_aorta gets shuffled, by rng.permutation. If the accuacy drops,
-            # then that unc_aorta feature is informative. If accuracy stays the same,
-            # then the model doesn't rely on it much
+            # e.g. unc_aorta gets shuffled, by rng.permutation. If the accuacy drops, 
+            # then that unc_aorta feature is informative. If accuracy stays the same, 
+            # then the model doesn't rely on it much 
             rng = np.random.RandomState(42)
             for col in unc_cols:
                 fi        = sel.index(col)
@@ -698,7 +696,7 @@ if USE_UNCERTAINTY_FEATURES:
 
         w_imp /= n_folds
 
-        # Useful reporting of the results for analysis:
+        # Useful reporting of the results for analysis: 
         print(f"\n--- (a) First-layer weight magnitude (avg over {n_folds} folds) ---")
         print(f"  {'Feature':<50}  {'Weight Mag':>10}")
         print(f"  {'-'*62}")
@@ -730,8 +728,9 @@ if USE_UNCERTAINTY_FEATURES:
 
     analyse_uncertainty_importance()
 
-# Overall, 7 new additional entropy features appended to baseline feature vector
-# in the uncertainty experiments. This file consumes the "per_structure_uncertainty" csv
+# 7 per-structure aleatoric features (H(mean_p) − JSD) appended to the baseline feature vector.
+# This file consumes the "per_structure_uncertainty" CSV produced by compute_uncertainty_aleatoric.py
+# (mean_aleatoric column).
 
 # ResNet Baseline
 # We provide a Resnet-50 model as an Image-only baseline to compare our model against.

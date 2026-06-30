@@ -23,7 +23,10 @@ import sys
 import os
 import json
 import argparse
-sys.path.insert(0, "/vol/biomedic2/bglocker_studproj/<INSERT WHERE ANATOMIX IS FOR YOU>/anatomix/")
+sys.path.insert(
+    0, "/vol/biomedic2/bglocker_studproj/<INSERT WHERE ANATOMIX IS FOR YOU>/anatomix/"
+)
+sys.path.insert(0, "/vol/biomedic2/bglocker_studproj/<USERNAME>/grc-net")
 
 import torch
 from monai.data import ThreadDataLoader, CacheDataset
@@ -37,13 +40,13 @@ torch.backends.cudnn.benchmark     = False
 _parser = argparse.ArgumentParser(description="Geo-Radio Classification")
 _parser.add_argument(
     "--use-uncertainty", action="store_true", default=False,
-    help="Append 7 per-structure uncertainty entropy features to the classifier input. "
+    help="Append 7 per-structure uncertainty JSD features to the classifier input. "
          "Not necessary for the baseline (radiomic + geometric features only)."
 )
 _parser.add_argument(
     "--uncertainty-csv",
-    default="output/asoca/uncertainty_analysis/metrics/per_structure_uncertainty.csv",
-    help="Path to per_structure_uncertainty.csv produced by compute_uncertainty.py."
+    default="output/asoca/uncertainty_analysis_kl/metrics/per_structure_uncertainty.csv",
+    help="Path to per_structure_uncertainty.csv produced by compute_uncertainty_kl.py."
 )
 _parser.add_argument(
     "--run-resnet", action="store_true", default=False,
@@ -264,10 +267,10 @@ print(f"  Shape    : {_unc_df.shape}   "
       f"(will be {len(subjects) * 7} rows × 6 cols once ASOCA uncertainty is complete)")
 print(_unc_df.head(14).to_string(index=False))
 
-# Pivot the uncertainty dataframe to have one row per sample_id and one column per class_id, with values = mean_entropy
+# Pivot the uncertainty dataframe to have one row per sample_id and one column per class_id, with values = mean_kl
 # this allows easy lookup of the 7 unc features per subject
 # joins onto subjects via subjects[i]["sample_idx"] == sample_id
-_unc_pivot = _unc_df.pivot(index="sample_id", columns="class_id", values="mean_entropy")
+_unc_pivot = _unc_df.pivot(index="sample_id", columns="class_id", values="mean_kl")
 _unc_pivot.columns.name = None   # remove the axis label so col access is clean
 
 print(f"Uncertainty pivot table verification")
@@ -288,10 +291,10 @@ else:
 rows = []
 for subj in subjects:
     row = {}
-    # Constructing uncertainty features 
+    # Constructing uncertainty features
     # for each subject, add a row for unc_{name} (one per structure) to the dataframe
-    # these are mean binary entropy inside each structure ... computed across multi-seed 
-    # Aantomix registrations  
+    # these are mean JSD (avg KL from mean) inside each structure's soft mask,
+    # computed across multi-seed Anatomix registrations
     for L, name in class_mapping.items():
         disp_vox = subj["struct_disp"][L]
         n_vox = disp_vox.shape[0]
@@ -356,7 +359,7 @@ print(f"Feature dimensionality")
 print(f"  Radiomic features : {len(SEMANTIC_FEATURES)} per structure × {_n_structs} = {_n_rad_feats}")
 print(f"  Geometric features: {MAX_DEF_PC} PCs × {_n_structs} = {_n_geo_feats}  "
       f"(Optuna searches def_pc_amt in 1–{MAX_DEF_PC})")
-print(f"  Uncertainty feats : {_n_unc_feats}  (one entropy per structure)")
+print(f"  Uncertainty feats : {_n_unc_feats}  (one JSD per structure)")
 print(f"  ── df_full total cols (excl. label): {df_full.shape[1] - 1}")
 print(f"  ── Baseline  MLP input (def_pc_amt=MAX_DEF_PC): "
       f"{_n_geo_feats} + {_n_rad_feats} = {_n_geo_feats + _n_rad_feats}")
@@ -584,7 +587,7 @@ for seed_idx, s in enumerate(best_fold_info['seeds']):
 
 
 # Save per-fold results to a labelled CSV - useful for later analysis
-_exp_tag = "uncertainty" if USE_UNCERTAINTY_FEATURES else "baseline"
+_exp_tag = "uncertainty_kl" if USE_UNCERTAINTY_FEATURES else "baseline"
 _result_rows = []
 for _si, _s in enumerate(best_fold_info['seeds']):
     for _fi, _m in enumerate(best_fold_info['per_seed_fold_metrics'][_si], start=1):
@@ -667,9 +670,9 @@ if USE_UNCERTAINTY_FEATURES:
             mdl.eval()
 
             # (a) first-layer weight magnitude per input feature
-            # for each uncertainty feature, compute the mean absolute weight of
+            # for each uncertainty feature, compute the mean absolute weight of 
             # the first layer's weights corresponding to that feature
-            # larger magnitude means greater influence
+            # larger magnitude means greater influence 
             first_lin = next(m for m in mdl.modules() if isinstance(m, torch.nn.Linear))
             w_imp += first_lin.weight.detach().abs().mean(dim=0).cpu().numpy()
 
@@ -680,9 +683,9 @@ if USE_UNCERTAINTY_FEATURES:
             base_acc = accuracy_score(yvl.astype(int), b_pred)
 
             # (b) Permutation importance for the 7 uncertainty features
-            # e.g. unc_aorta gets shuffled, by rng.permutation. If the accuacy drops,
-            # then that unc_aorta feature is informative. If accuracy stays the same,
-            # then the model doesn't rely on it much
+            # e.g. unc_aorta gets shuffled, by rng.permutation. If the accuacy drops, 
+            # then that unc_aorta feature is informative. If accuracy stays the same, 
+            # then the model doesn't rely on it much 
             rng = np.random.RandomState(42)
             for col in unc_cols:
                 fi        = sel.index(col)
@@ -698,7 +701,7 @@ if USE_UNCERTAINTY_FEATURES:
 
         w_imp /= n_folds
 
-        # Useful reporting of the results for analysis:
+        # Useful reporting of the results for analysis: 
         print(f"\n--- (a) First-layer weight magnitude (avg over {n_folds} folds) ---")
         print(f"  {'Feature':<50}  {'Weight Mag':>10}")
         print(f"  {'-'*62}")
@@ -730,8 +733,9 @@ if USE_UNCERTAINTY_FEATURES:
 
     analyse_uncertainty_importance()
 
-# Overall, 7 new additional entropy features appended to baseline feature vector
+# Overall, 7 new additional JSD features appended to baseline feature vector
 # in the uncertainty experiments. This file consumes the "per_structure_uncertainty" csv
+# produced by compute_uncertainty_kl.py (mean_kl column, not mean_entropy)
 
 # ResNet Baseline
 # We provide a Resnet-50 model as an Image-only baseline to compare our model against.

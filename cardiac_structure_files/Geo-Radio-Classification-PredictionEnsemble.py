@@ -4,12 +4,12 @@
 # # Geo-Radio Classification — Prediction-Space Ensemble (Experiment 3)
 #
 # A fork of Geo-Radio-Classification.py
-# 
-# Instead of evaluating on a single consensus segmentation at inference, this script 
-# runs the trained MLP independently on features extracted from each of the 5 
+#
+# Instead of evaluating on a single consensus segmentation at inference, this script
+# runs the trained MLP independently on features extracted from each of the 5
 # per-seed warped-atlas segmentations, then averages the resulting probs before thresholding.
-# Training always uses consensus features (df_full) and only the validation forward pass 
-# is replaced with the 5-seed ensemble. 
+# Training always uses consensus features (df_full) and only the validation forward pass
+# is replaced with the 5-seed ensemble.
 #
 # Per-subject ensemble probabilities and uncertainty decomposition are saved
 # to a separate CSV after the best trial is identified.
@@ -20,7 +20,7 @@ import sys
 import os
 import json
 import argparse
-sys.path.insert(0, "/vol/biomedic2/bglocker_studproj/<INSERT WHERE ANATOMIX IS FOR YOU>/anatomix/")
+sys.path.insert(0, "/vol/biomedic2/bglocker_studproj/yrs23/grc-net/anatomix")
 
 import torch
 from monai.data import ThreadDataLoader, CacheDataset
@@ -251,7 +251,7 @@ for sample_idx, batch in enumerate(tqdm(dataloader_test, desc="extracting consen
 
 # # MLP classification
 # Here, we perform hyperparameter optimisation using `optuna` to find the best classification model for the diseased data.
-# We perform 5-fold stratified cross-validation over 3 seeds to achieve confidence in the low volume of data. 
+# We perform 5-fold stratified cross-validation over 3 seeds to achieve confidence in the low volume of data.
 
 import pandas as pd
 import optuna
@@ -264,7 +264,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 MAX_DEF_PC = 3
 
-# removed uncertainty calculation here 
+# removed uncertainty calculation here
 
 rows = []
 for subj in subjects:
@@ -307,14 +307,14 @@ print(df_full.isna().any()[lambda x: x])
 print(df_full.head(4))
 print("Shape of df_full:", df_full.shape)
 
-# Per-seed feature extraction 
+# Per-seed feature extraction
 #
 # For each segmentation seed and each subject, load the pre-saved argmax labelmap
 # and displacement transform, then extract the same radiomics and geometric features
 # as the consensus loop above.
 #
 # These per-seed features are used only at inference time (validation fold).
-# The classifier is always trained on consensus features (df_full) 
+# The classifier is always trained on consensus features (df_full)
 #
 # Result: per_seed_dfs - list of DataFrames, one per seed, with identical columns to df_full.
 
@@ -655,7 +655,7 @@ for seed_idx, s in enumerate(best_fold_info['seeds']):
         print(f"  Confusion Matrix:\n{m['confusion_matrix']}\n")
 
 # Results CSV — separate file from Experiments 1 & 2
-# Save per-fold results to a labelled CSV - useful for later analysis 
+# Save per-fold results to a labelled CSV - useful for later analysis
 _result_rows = []
 for _si, _s in enumerate(best_fold_info['seeds']):
     for _fi, _m in enumerate(best_fold_info['per_seed_fold_metrics'][_si], start=1):
@@ -674,7 +674,7 @@ for _si, _s in enumerate(best_fold_info['seeds']):
 pd.DataFrame(_result_rows).to_csv("results_prediction_ensemble.csv", index=False)
 print(f"\nFold-level results saved -> results_prediction_ensemble.csv")
 
-# Also we save per-subject probability CSV in Experiment 3 
+# Also we save per-subject probability CSV in Experiment 3
 #
 # Re-run the best model once per (cv_seed, fold) to collect:
 #   p_seed_<S>   — probability from each individual segmentation seed
@@ -778,7 +778,7 @@ for cls in ["Normal", "Diseased"]:
 
 # # ResNet Baseline
 # We provide a Resnet-50 model as an Image-only baseline to compare our model against.
-# Disabled by default (--run-resnet flag required). 
+# Disabled by default (--run-resnet flag required).
 
 if RUN_RESNET:
     import torch

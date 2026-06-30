@@ -276,7 +276,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 MAX_DEF_PC = 3
 
-# Load deformation_variance_summary CSVs (split-aware) 
+# Load deformation_variance_summary CSVs (split-aware)
 # btw never overwrite per_structure_uncertainty.csv
 # Test split  (8 subjects, sample_ids 0-7):
 _defvar_test_csv  = f"{_base_out}/full-stn/uncertainty_analysis/metrics/deformation_variance_summary.csv"
@@ -584,7 +584,7 @@ for seed_idx, s in enumerate(best_fold_info['seeds']):
         print(f"  Confusion Matrix:\n{m['confusion_matrix']}\n")
 
 
-# Save per-fold results to a labelled CSV - useful for later analysis 
+# Save per-fold results to a labelled CSV - useful for later analysis
 # All outputs use "defvar" tag — never overwrites classification_uncertainty/ or classification/.
 _exp_tag = "defvar"
 _out_dir = os.path.join(_base_out, f"classification_{_exp_tag}")
